@@ -1,9 +1,9 @@
 """
-No-op reconciler (domain).
+No-op reconciler adapter.
 """
 
-from ptt.domain.reconciler import BaseReconciler
 from ptt.domain.models import ReconciliationResult
+from ptt.domain.ports import BaseReconciler
 
 
 class NoOpReconciler(BaseReconciler):

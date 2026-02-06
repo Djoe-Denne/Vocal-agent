@@ -1,19 +1,22 @@
 """
 Qwen3 TTS model wrapper (PyTorch adapter).
 
-Uses the Base model's generate_voice_clone for sample-based voice cloning.
+Implements the TTSModel domain port using Qwen3-TTS.
+Supports voice cloning via reference audio, built-in voice presets,
+and guidance instructions to shape the voice output.
 """
 
 from __future__ import annotations
 
 from dataclasses import asdict
-from typing import Callable, Optional, Tuple
+from typing import Optional, Tuple
 
 import numpy as np
 import torch
 from qwen_tts import Qwen3TTSModel
 
-from tts_server.config import ModelConfig
+from tts_server.application.config import ModelConfig
+from tts_server.domain.ports import TTSModel
 
 
 _DTYPE_MAP = {
@@ -23,7 +26,9 @@ _DTYPE_MAP = {
 }
 
 
-class QwenTTSWrapper:
+class QwenTTSWrapper(TTSModel):
+    """Qwen3-TTS adapter implementing the TTSModel port."""
+
     def __init__(self, config: ModelConfig) -> None:
         self._config = config
         self._model: Optional[Qwen3TTSModel] = None
@@ -54,26 +59,43 @@ class QwenTTSWrapper:
     def generate(
         self,
         text: str,
+        voice_preset: Optional[str] = None,
         voice_sample_path: Optional[str] = None,
         voice_sample_text: Optional[str] = None,
+        guidance: Optional[str] = None,
     ) -> Tuple[np.ndarray, int]:
         if not text.strip():
             raise ValueError("Input text is empty.")
-
-        if not voice_sample_path:
-            raise ValueError("voice_sample is required for sample-based voice cloning.")
 
         self.load()
         assert self._model is not None
 
         language = (self._config.language or "English").strip() or "English"
 
-        wavs, sr = self._model.generate_voice_clone(
-            text=text,
-            language=language,
-            ref_audio=voice_sample_path,
-            ref_text=voice_sample_text,
-        )
+        # Build the effective text, prepending guidance if provided
+        effective_text = text
+        if guidance:
+            effective_text = f"[{guidance}] {text}"
+
+        # Route to voice-cloning or preset-based generation
+        if voice_sample_path:
+            wavs, sr = self._model.generate_voice_clone(
+                text=effective_text,
+                language=language,
+                ref_audio=voice_sample_path,
+                ref_text=voice_sample_text,
+            )
+        elif voice_preset:
+            # Use the model's built-in speaker preset
+            wavs, sr = self._model.generate(
+                text=effective_text,
+                language=language,
+                speaker=voice_preset,
+            )
+        else:
+            raise ValueError(
+                "Either voice_preset or voice_sample_path must be provided."
+            )
 
         if not wavs:
             raise RuntimeError("Model did not return audio.")

@@ -1,0 +1,1 @@
+"""Sounddevice audio recording adapter."""

@@ -1,5 +1,7 @@
 """
 TTS application service.
+
+Provides the TTSService orchestrator and a factory for creating adapter instances.
 """
 
 from __future__ import annotations
@@ -10,8 +12,29 @@ from typing import Optional, Tuple
 import numpy as np
 
 from tts_server.application.config import TTSConfig
+from tts_server.domain.models import SynthesisResult
 from tts_server.domain.ports import TTSModel
 
+
+# ---------------------------------------------------------------------------
+# Adapter factory
+# ---------------------------------------------------------------------------
+
+def create_tts_model(config: TTSConfig) -> TTSModel:
+    """
+    Factory: select and instantiate the appropriate TTSModel adapter
+    based on the configuration.
+    """
+    from tts_server.infra_pytorch.qwen_model import QwenTTSWrapper
+
+    # Currently only Qwen adapter exists; extend this with elif branches
+    # when new adapters are added.
+    return QwenTTSWrapper(config.model)
+
+
+# ---------------------------------------------------------------------------
+# Voice-sample resolution helper
+# ---------------------------------------------------------------------------
 
 def _resolve_voice_sample(voices_dir: Path, sample_id: str) -> Tuple[str, Optional[str]]:
     sample_dir = voices_dir / sample_id
@@ -36,6 +59,10 @@ def _resolve_voice_sample(voices_dir: Path, sample_id: str) -> Tuple[str, Option
     return str(audio_path), text_value
 
 
+# ---------------------------------------------------------------------------
+# Application service
+# ---------------------------------------------------------------------------
+
 class TTSService:
     def __init__(self, config: TTSConfig, model: TTSModel) -> None:
         self._config = config
@@ -49,23 +76,40 @@ class TTSService:
         self,
         text: str,
         voice_sample: Optional[str] = None,
-    ) -> Tuple[np.ndarray, int, str]:
+        voice_preset: Optional[str] = None,
+        guidance: Optional[str] = None,
+    ) -> SynthesisResult:
+        """
+        Synthesize speech from text.
+
+        Either *voice_sample* (a sample-id resolved from the voices directory)
+        or *voice_preset* (a model-native speaker name) must be provided.
+        An optional *guidance* string can be passed to shape the voice output.
+        """
         response_fmt = self._config.output.response_format
 
-        if not voice_sample:
-            raise ValueError("voice_sample is required for CustomVoice sample-based synthesis.")
+        voice_sample_path: Optional[str] = None
+        voice_sample_text: Optional[str] = None
 
-        voice_sample_path, voice_sample_text = _resolve_voice_sample(
-            self._config.model.voices_dir, voice_sample
-        )
+        if voice_sample:
+            voice_sample_path, voice_sample_text = _resolve_voice_sample(
+                self._config.model.voices_dir, voice_sample
+            )
+
+        if not voice_sample_path and not voice_preset:
+            raise ValueError(
+                "Either voice_sample or voice_preset must be provided."
+            )
 
         audio, sr = self._model.generate(
             text=text,
+            voice_preset=voice_preset,
             voice_sample_path=voice_sample_path,
             voice_sample_text=voice_sample_text,
+            guidance=guidance,
         )
 
-        return audio, sr, response_fmt
+        return SynthesisResult(audio=audio, sample_rate=sr, response_format=response_fmt)
 
     def list_voices(self) -> dict:
         return {

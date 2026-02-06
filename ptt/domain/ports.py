@@ -1,35 +1,81 @@
 """
-Domain reconciler base definitions.
+Domain port interfaces for PTT.
+
+Pure abstract contracts that infrastructure adapters must implement.
 """
 
 import re
 from abc import ABC, abstractmethod
-from typing import Optional
+from pathlib import Path
+from typing import Callable, List, Optional
 
-from .models import ReconciliationResult
+import numpy as np
 
+from .models import ReconciliationResult, TranscriptionResult
+
+
+# ---------------------------------------------------------------------------
+# Transcriber port
+# ---------------------------------------------------------------------------
+
+class BaseTranscriber(ABC):
+    """Abstract port for ASR transcription adapters."""
+
+    @property
+    @abstractmethod
+    def is_loaded(self) -> bool:
+        """Whether the underlying model is currently loaded."""
+        ...
+
+    @abstractmethod
+    def load_model(self) -> bool:
+        """Load the model into memory. Returns True on success."""
+        ...
+
+    @abstractmethod
+    def unload_model(self) -> bool:
+        """Unload the model from memory. Returns True on success."""
+        ...
+
+    @abstractmethod
+    def transcribe_file(self, audio_path: Path) -> Optional[TranscriptionResult]:
+        """Transcribe an audio file."""
+        ...
+
+    @abstractmethod
+    def transcribe_array(
+        self,
+        audio_data: np.ndarray,
+        sample_rate: int,
+        on_segment: Optional[Callable[[dict], None]] = None,
+    ) -> Optional[TranscriptionResult]:
+        """Transcribe audio from a numpy array."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Text-cleaning utility (used by reconcilers)
+# ---------------------------------------------------------------------------
 
 def clean_transcription(text: str) -> str:
-    """
-    Clean up transcription text by removing common artifacts.
-    """
+    """Clean up transcription text by removing common artifacts."""
     if not text:
         return ""
 
     text = text.strip()
 
     if len(text) >= 2:
-        quote_pairs = [('"', '"'), ("'", "'"), ("“", "”"), ("«", "»"), ("‘", "’")]
+        quote_pairs = [('"', '"'), ("'", "'"), ("\u201c", "\u201d"), ("\u00ab", "\u00bb"), ("\u2018", "\u2019")]
         for left, right in quote_pairs:
             if text.startswith(left) and text.endswith(right):
                 text = text[1:-1].strip()
                 break
 
-    text = re.sub(r'^[\"“”«»\'`]+', '', text)
-    text = re.sub(r'[\"“”«»\'`]+$', '', text)
+    text = re.sub(r'^[\"\u201c\u201d\u00ab\u00bb\'`]+', '', text)
+    text = re.sub(r'[\"\u201c\u201d\u00ab\u00bb\'`]+$', '', text)
 
     text = re.sub(r'\.{3,}', ' ', text)
-    text = re.sub(r'…', ' ', text)
+    text = re.sub(r'\u2026', ' ', text)
 
     text = re.sub(r'([!?])\1{1,}', r'\1', text)
     text = re.sub(r'([.,])\1{1,}', r'\1', text)
@@ -39,12 +85,20 @@ def clean_transcription(text: str) -> str:
     return text.strip()
 
 
+# ---------------------------------------------------------------------------
+# Reconciler port
+# ---------------------------------------------------------------------------
+
 class BaseReconciler(ABC):
     """
-    Abstract base class for text reconciliation.
+    Abstract port for text reconciliation adapters.
+
+    Concrete subclasses only need to implement ``reconcile()``.
+    The segment-management logic (``add_segment``, ``get_full_text``, etc.)
+    is shared domain behaviour.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._segments: list[str] = []
         self._full_text: str = ""
         self._chain: list["BaseReconciler"] = []
@@ -52,26 +106,22 @@ class BaseReconciler(ABC):
     @abstractmethod
     def reconcile(self, previous_text: str, current_text: str) -> ReconciliationResult:
         """Find overlap between two text segments."""
-        raise NotImplementedError
+        ...
+
+    # -- shared domain logic --------------------------------------------------
 
     def add_segment(self, text: str) -> ReconciliationResult:
         text = clean_transcription(text)
         if not text:
             return ReconciliationResult(
-                new_text="",
-                overlap_found=False,
-                overlap_length=0,
-                confidence=1.0,
+                new_text="", overlap_found=False, overlap_length=0, confidence=1.0
             )
 
         if not self._segments:
             self._segments.append(text)
             self._full_text = text
             return ReconciliationResult(
-                new_text=text,
-                overlap_found=False,
-                overlap_length=0,
-                confidence=1.0,
+                new_text=text, overlap_found=False, overlap_length=0, confidence=1.0
             )
 
         previous = self._segments[-1]
@@ -87,10 +137,7 @@ class BaseReconciler(ABC):
 
             if not current_text:
                 result = chain_result or ReconciliationResult(
-                    new_text="",
-                    overlap_found=False,
-                    overlap_length=0,
-                    confidence=1.0,
+                    new_text="", overlap_found=False, overlap_length=0, confidence=1.0
                 )
             else:
                 result = self.reconcile(previous, current_text)
@@ -117,10 +164,7 @@ class BaseReconciler(ABC):
     ) -> ReconciliationResult:
         if not previous_text or not current_text:
             return ReconciliationResult(
-                new_text=current_text,
-                overlap_found=False,
-                overlap_length=0,
-                confidence=1.0,
+                new_text=current_text, overlap_found=False, overlap_length=0, confidence=1.0
             )
 
         prev_words = previous_text.lower().split()
@@ -129,9 +173,7 @@ class BaseReconciler(ABC):
 
         max_overlap = min(len(prev_words), len(curr_words), max_context)
         for overlap_len in range(max_overlap, min_words - 1, -1):
-            prev_slice = prev_words[-overlap_len:]
-            curr_slice = curr_words[:overlap_len]
-            if prev_slice == curr_slice:
+            if prev_words[-overlap_len:] == curr_words[:overlap_len]:
                 new_words = curr_words_original[overlap_len:]
                 return ReconciliationResult(
                     new_text=" ".join(new_words),
@@ -141,10 +183,7 @@ class BaseReconciler(ABC):
                 )
 
         return ReconciliationResult(
-            new_text=current_text,
-            overlap_found=False,
-            overlap_length=0,
-            confidence=0.0,
+            new_text=current_text, overlap_found=False, overlap_length=0, confidence=0.0
         )
 
     def _apply_chain(

@@ -5,7 +5,6 @@ FastAPI server for PTT byte-stream transcription.
 from __future__ import annotations
 
 import io
-from typing import Optional
 
 import numpy as np
 import soundfile as sf
@@ -13,7 +12,7 @@ from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 from ptt.application.config import load_config
-from ptt.infra_pytorch.transcriber import create_transcriber
+from ptt.application.factories import create_transcriber
 
 
 class TranscriptionResponse(BaseModel):

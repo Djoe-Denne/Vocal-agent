@@ -10,11 +10,12 @@ import time
 import torch
 
 from ptt.application.config import load_config
-from ptt.infra_cli.hotkeys import HotkeyManager
-from ptt.infra_web.openclaw import OpenClawClient
-from ptt.infra_cli.recorder import StreamingRecorder, AudioChunk
-from ptt.reconcilers import create_reconciler, BaseReconciler, LLMReconciler, clean_transcription
-from ptt.infra_pytorch.transcriber import create_transcriber, BaseTranscriber
+from ptt.application.factories import create_reconciler, create_transcriber
+from ptt.domain.ports import BaseReconciler, BaseTranscriber, clean_transcription
+from ptt.infra_pynput.hotkeys import HotkeyManager
+from ptt.infra_podman.openclaw import OpenClawClient
+from ptt.infra_reconcilers.llm import LLMReconciler
+from ptt.infra_sounddevice.recorder import StreamingRecorder, AudioChunk
 from ptt.utils.logging import setup_logging, get_logger
 
 

@@ -8,10 +8,10 @@ import time
 from pathlib import Path
 
 from ptt.application.config import load_config
-from ptt.infra_cli.hotkeys import HotkeyManager
-from ptt.infra_cli.recorder import StreamingRecorder
+from ptt.infra_pynput.hotkeys import HotkeyManager
+from ptt.infra_sounddevice.recorder import StreamingRecorder
 from ptt.infra_web.api_client import TranscriptionApiClient
-from ptt.infra_web.openclaw import OpenClawClient
+from ptt.infra_podman.openclaw import OpenClawClient
 from ptt.utils.logging import setup_logging, get_logger
 
 

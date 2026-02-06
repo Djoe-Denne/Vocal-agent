@@ -13,7 +13,7 @@ from tts_server.application.config import load_config
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Qwen3 TTS Server")
+    parser = argparse.ArgumentParser(description="TTS Server")
     parser.add_argument("--config", type=Path, default=None, help="Path to tts.toml")
     parser.add_argument("--host", type=str, default=None, help="Bind host")
     parser.add_argument("--port", type=int, default=None, help="Bind port")
@@ -29,7 +29,7 @@ def main() -> None:
     port = args.port or config.server.port
 
     uvicorn.run(
-        "tts_server.server:app",
+        "tts_server.infra_web.api:app",
         host=host,
         port=port,
         log_level=config.server.log_level,

@@ -55,7 +55,7 @@ def main() -> None:
             from pathlib import Path
 
             from ptt.application.config import load_config
-            from ptt.infra_pytorch.transcriber import create_transcriber
+            from ptt.application.factories import create_transcriber
 
             config = load_config()
             transcriber = create_transcriber(config)

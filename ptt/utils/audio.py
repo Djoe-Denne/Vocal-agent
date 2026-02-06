@@ -7,6 +7,8 @@ Audio-related helper functions for the PTT application.
 import sys
 from typing import Optional
 
+import numpy as np
+
 from .logging import get_logger
 
 
@@ -58,6 +60,32 @@ def get_audio_devices() -> list[dict]:
         log.error(f"Failed to query audio devices: {e}")
     
     return devices
+
+
+def prepare_audio(audio_data: np.ndarray, sample_rate: int) -> np.ndarray:
+    """
+    Prepare audio data for transcription.
+
+    Converts to float32 normalised to [-1, 1], ensures mono, and
+    resamples to 16 kHz.
+    """
+    if audio_data.dtype == np.int16:
+        audio_float = audio_data.astype(np.float32) / 32768.0
+    elif audio_data.dtype == np.float32:
+        audio_float = audio_data
+    else:
+        audio_float = audio_data.astype(np.float32)
+
+    if len(audio_float.shape) > 1:
+        audio_float = audio_float.mean(axis=1)
+
+    if sample_rate != 16000:
+        from scipy import signal
+
+        num_samples = int(len(audio_float) * 16000 / sample_rate)
+        audio_float = signal.resample(audio_float, num_samples)
+
+    return audio_float
 
 
 def validate_audio_file(path) -> Optional[tuple[int, float]]:

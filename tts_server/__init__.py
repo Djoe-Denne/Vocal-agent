@@ -1,3 +1,3 @@
 """
-Qwen3 TTS Server package.
+TTS Server package.
 """

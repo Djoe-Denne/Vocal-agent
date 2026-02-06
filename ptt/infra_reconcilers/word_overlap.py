@@ -1,9 +1,9 @@
 """
-PTT Word Overlap Reconciler (domain).
+Word-overlap reconciler adapter.
 """
 
-from ptt.domain.reconciler import BaseReconciler
 from ptt.domain.models import ReconciliationResult
+from ptt.domain.ports import BaseReconciler
 
 
 class WordOverlapReconciler(BaseReconciler):
@@ -60,24 +60,3 @@ class WordOverlapReconciler(BaseReconciler):
             overlap_length=0,
             confidence=1.0,
         )
-
-    def _find_partial_overlap(self, prev_words: list[str], curr_words: list[str]) -> int:
-        for start_idx in range(len(prev_words)):
-            remaining = prev_words[start_idx:]
-            if len(remaining) > len(curr_words):
-                continue
-
-            matches = True
-            for i, word in enumerate(remaining):
-                if i >= len(curr_words):
-                    break
-                if word != curr_words[i]:
-                    if i == 0 and curr_words[i].startswith(word[-3:]):
-                        continue
-                    matches = False
-                    break
-
-            if matches:
-                return len(remaining)
-
-        return 0

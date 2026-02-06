@@ -1,13 +1,13 @@
 """
-PTT LLM Reconciler (domain).
+LLM-based reconciler adapter.
 """
 
 import threading
 import traceback
 from typing import Optional
 
-from ptt.domain.reconciler import BaseReconciler
 from ptt.domain.models import ReconciliationResult
+from ptt.domain.ports import BaseReconciler
 from ptt.utils.logging import get_logger
 
 
@@ -20,7 +20,7 @@ Current segment: "{current}"
 Tasks:
 1. Find and remove duplicate words/phrases at the overlap point
 2. Remove hesitations (uh, um, euh, eh, ah, hmm, etc.)
-3. Remove stutters and repetitions (e.g., "le le" → "le", "si le si" → "si")
+3. Remove stutters and repetitions (e.g., "le le" -> "le", "si le si" -> "si")
 4. Remove filler words (like "donc euh", "ben", "genre", "you know", "like")
 5. Keep the meaning intact, just clean up the speech artifacts
 6. Output ONLY the new (non-duplicate) cleaned words from the current segment
@@ -66,7 +66,6 @@ New words only:"""
         if self._transformers_available is None:
             try:
                 import transformers  # noqa: F401
-
                 self._transformers_available = True
             except ImportError:
                 self._transformers_available = False
@@ -189,7 +188,7 @@ New words only:"""
                 )
 
             generated = self._tokenizer.decode(
-                outputs[0][inputs["input_ids"].shape[1] :],
+                outputs[0][inputs["input_ids"].shape[1]:],
                 skip_special_tokens=True,
             )
             new_text = generated.strip().split("\n")[0].strip()

@@ -1,0 +1,1 @@
+"""HuggingFace ASR adapter."""

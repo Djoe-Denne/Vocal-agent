@@ -1,9 +1,9 @@
 """
-PTT Fuzzy Reconciler (domain).
+Fuzzy reconciler adapter.
 """
 
-from ptt.domain.reconciler import BaseReconciler
 from ptt.domain.models import ReconciliationResult
+from ptt.domain.ports import BaseReconciler
 
 
 class FuzzyReconciler(BaseReconciler):
@@ -17,7 +17,6 @@ class FuzzyReconciler(BaseReconciler):
         if self._rapidfuzz_available is None:
             try:
                 import rapidfuzz  # noqa: F401
-
                 self._rapidfuzz_available = True
             except ImportError:
                 self._rapidfuzz_available = False
