@@ -1,0 +1,1 @@
+"""Daemon adapter for PTT."""

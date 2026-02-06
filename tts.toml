@@ -1,0 +1,15 @@
+[server]
+host = "127.0.0.1"
+port = 8001
+log_level = "info"
+preload_model = true
+
+[model]
+model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
+device_map = "cuda:0"
+torch_dtype = "bfloat16"
+language = "French"
+voices_dir = "./tts_server/voices"
+
+[output]
+response_format = "wav"
