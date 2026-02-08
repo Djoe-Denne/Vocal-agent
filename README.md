@@ -89,16 +89,43 @@ The model is downloaded automatically from HuggingFace on first run:
 
 ```cmd
 cd tts
-cargo run -- "Bonjour le monde"
-cargo run -- "Hello world" --voice ryan --language english --output out.wav
-cargo run -- "Salut" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --voice serena
+cargo run -- synthesize "Bonjour le monde"
+cargo run -- synthesize "Hello world" --voice ryan --language english --output out.wav
+cargo run -- --model-id Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice synthesize "Salut" --voice serena
 ```
 
 To use a local model directory instead:
 
 ```cmd
-cargo run -- "Bonjour" --model-dir ./models/1.7b-base
+cargo run -- --model-dir ./models/1.7b-base synthesize "Bonjour"
 ```
+
+### TTS — web API server
+
+```cmd
+cd tts
+cargo run -- serve
+cargo run -- serve --host 0.0.0.0 --port 3002
+```
+
+Once the server is running, send requests with `curl`:
+
+```cmd
+curl -X POST http://localhost:3000/synthesize -H "Content-Type: application/json" ^
+  -d "{\"text\": \"Bonjour le monde\", \"voice\": \"ryan\", \"language\": \"french\"}" ^
+  --output output.wav
+curl http://localhost:3000/health
+```
+
+Or PowerShell:
+
+```powershell
+$body = @{ text = "Bonjour le monde"; voice = "ryan"; language = "french" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:3000/synthesize -Method Post -ContentType "application/json" -Body $body -OutFile output.wav
+```
+
+The `POST /synthesize` endpoint returns WAV audio directly. Synthesis metadata
+(timings, warnings) is available in the `X-TTS-Metadata` response header as JSON.
 
 #### Voice cloning with voice profiles
 
@@ -115,7 +142,7 @@ tts/voices/
 Then synthesise with the cloned voice — no extra flags needed:
 
 ```cmd
-cargo run -- "Hello world" --voice justamon
+cargo run -- synthesize "Hello world" --voice justamon
 ```
 
 This works the same as `--voice ryan`; the engine automatically detects that
@@ -132,7 +159,7 @@ otherwise x-vector mode is used (faster, no transcript needed).
 You can also pass reference audio directly via CLI flags:
 
 ```cmd
-cargo run -- "Clone this voice" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-Base \
+cargo run -- --model-id Qwen/Qwen3-TTS-12Hz-1.7B-Base synthesize "Clone this voice" \
   --ref-audio reference.wav --ref-text "transcript of reference audio"
 ```
 
@@ -141,7 +168,7 @@ cargo run -- "Clone this voice" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-Base \
 VoiceDesign models accept a natural-language voice description:
 
 ```cmd
-cargo run -- "Hello" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
+cargo run -- --model-id Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign synthesize "Hello" \
   --instruct "A cheerful young female voice with high pitch"
 ```
 

@@ -173,7 +173,7 @@ pub struct SynthesisRequest {
 // ---------------------------------------------------------------------------
 
 /// Timing breakdown for a synthesis operation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct SynthesisTiming {
     /// Time to load/prepare the model (ms).
     pub model_load_ms: f64,

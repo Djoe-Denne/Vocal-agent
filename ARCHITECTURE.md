@@ -90,11 +90,11 @@ candle 0.9.2, and these are mutually incompatible.
         ├── infra_local/
         │   └── provider.rs        LocalModelProvider (ModelProviderPort)
         ├── infra_cli/
-        │   └── cli.rs             CliArgs — clap-based CLI adapter
+        │   └── cli.rs             Args — clap-based CLI adapter (subcommands: synthesize, serve)
         ├── infra_web/
-        │   └── api.rs             Axum REST endpoints (stub)
-        ├── lib.rs
-        └── main.rs                CLI composition root
+        │   └── api.rs             Axum REST endpoints (POST /synthesize, GET /health)
+        ├── lib.rs                 Feature-gated module exports
+        └── main.rs                Composition root (CLI + web server)
 ```
 
 ---
@@ -202,6 +202,8 @@ Concrete implementations that bridge domain ports to external libraries.
 | **tts** | `infra_qwen3/` | `Qwen3TtsEngine` | `TtsEnginePort` | [`qwen3-tts`](https://github.com/TrevorS/qwen3-tts-rs) — candle 0.9.2 Qwen3-TTS |
 | **tts** | `infra_hf/` | `HuggingFaceModelProvider` | `ModelProviderPort` | HuggingFace Hub download + caching |
 | **tts** | `infra_local/` | `LocalModelProvider` | `ModelProviderPort` | Local directory validation |
+| **tts** | `infra_cli/` | `Args`, `SynthesizeArgs`, `ServeArgs` | — | Clap subcommands (synthesize, serve) |
+| **tts** | `infra_web/` | Axum router | — | REST API (`POST /synthesize`, `GET /health`) |
 
 Adding a new backend (e.g. a Whisper adapter, an OpenAI API adapter) means:
 
@@ -239,18 +241,20 @@ adapter *and* the application use case. It:
 
   main.rs (TTS)
     │
-    ├─ parse CLI args    (infra_cli::CliArgs)
+    ├─ parse CLI args    (infra_cli::Args → Command::Synthesize | Command::Serve)
     ├─ load config       (application::ConfigService)
     │
     ├─ create providers  ←── infra_hf::HuggingFaceModelProvider
     │                    ←── infra_local::LocalModelProvider
     ├─ create resolver   ←── application::ModelResolver(hf, local)
     ├─ create engine     ←── infra_qwen3::Qwen3TtsEngine
+    ├─ create registry   ←── application::PipelineRegistry (empty)
     │
     ├─ create use case   ←── application::SynthesizeSpeechUseCase(
     │                            config, resolver, Box<dyn TtsEnginePort>, registry)
-    ├─ build request     (merge config defaults + CLI overrides)
-    └─ use_case.execute(request)
+    │
+    ├─[synthesize mode]  build request → use_case.execute(request) → save WAV
+    └─[serve mode]       wrap use case in Arc<Mutex> → start Axum server
 ```
 
 ---
@@ -379,8 +383,9 @@ Both `asr` and `tts` use Cargo feature gates for optional infrastructure:
 
 | Feature | ASR | TTS | Dependencies |
 |---|---|---|---|
-| `cli` | CLI subcommands (transcribe) | CLI entry point | `clap` |
-| `web` | Axum web server (serve) | Axum endpoints (stub) | `axum`, `tokio` |
+| `cli` | CLI subcommands (transcribe) | CLI subcommands (synthesize) | `clap` |
+| `web` | Axum web server (serve, POST /transcribe) | Axum web server (serve, POST /synthesize) | `clap`, `axum`, `tokio` |
 | `cuda` | GPU acceleration | GPU acceleration | backend-specific |
+| `hub` | — | HuggingFace model download | `qwen3-tts/hub` |
 
-Default features: `cli`, `web`, `cuda` (ASR); `cli`, `hub`, `cuda` (TTS).
+Default features: `cli`, `web`, `cuda` (ASR); `cli`, `web`, `hub`, `cuda` (TTS).
