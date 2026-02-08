@@ -1,361 +1,202 @@
-# Push-to-Talk Speech-to-Text for Windows
+# Arsouille-agent
 
-A Windows push-to-talk application with **streaming transcription** that records audio, transcribes it in real-time, and sends the transcription to an AI agent (OpenClaw) running in a Podman container.
+GPU-accelerated **Automatic Speech Recognition (ASR)** and **Text-to-Speech (TTS)** in Rust — designed to replace the equivalent Python stack (`ptt`, `tts_server`, `shared`).
 
-## Features
+## Project layout
 
-- **Multi-Backend ASR**: Choose between OpenAI Whisper or HuggingFace models (Qwen3-ASR, etc.)
-- **Streaming Transcription**: Real-time transcription as you speak (configurable chunk size)
-- **Push-to-Talk Recording**: Press a hotkey to start/stop recording
-- **GPU Accelerated**: Full CUDA support
-- **Modular Reconciliation**: Multiple algorithms for merging overlapping text segments
-- **Clipboard Image Attachment**: Attach images from clipboard to your transcription
-- **AI Integration**: Send transcriptions to OpenClaw agent via Podman
-- **Audio Feedback**: Beep sounds to indicate recording state
+```
+├── shared_rs/      # Common crate: pipeline engine, domain primitives
+├── asr/            # ASR crate (Qwen3-ASR via the `aha` candle backend)
+└── tts/            # TTS crate (Qwen3-TTS via `qwen3-tts-rs`, voice cloning)
+```
 
-## Supported ASR Backends
+`asr` and `tts` are **independent Cargo projects** (no workspace) — each has its
+own `Cargo.lock` and dependency tree. This is required because `aha` needs
+candle 0.9.1 while `qwen3-tts` needs candle 0.9.2, and these are
+incompatible within a single Cargo resolution.
 
-| Backend | Models | Strengths |
-|---------|--------|-----------|
-| **HuggingFace** (default) | Qwen3-ASR-1.7B, etc. | Modern |
-| **Whisper** | tiny → large-v3 | Proven, widely used |
+Each crate follows a **hexagonal (ports & adapters) architecture**.
+See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the full design documentation.
 
 ## Prerequisites
 
-- **Python 3.11+**
-- **Podman Desktop** (for OpenClaw container): [Download](https://podman-desktop.io/)
-- **FFmpeg** (required by Whisper backend): `winget install Gyan.FFmpeg`
-- **CUDA Toolkit** (optional, for GPU acceleration): [Download](https://developer.nvidia.com/cuda-downloads)
+| Requirement | Notes |
+|---|---|
+| **Rust stable** (≥ 1.78) | `rustup update stable` |
+| **CUDA toolkit** (≥ 12.x) | Both `aha` and `qwen3-tts` compile CUDA kernels |
+| **Visual Studio 2022** Build Tools | `cl.exe` must be on `PATH` for `nvcc` |
 
-## Quick Start
+On Windows you **must** load the MSVC environment before building:
 
-### 1. Set up Python Environment
-
-```powershell
-.\setup.ps1
+```cmd
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
-Or manually:
+## Building
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r ptt/requirements.txt
+Each crate is built independently from its own directory:
 
-# For GPU support with CUDA 12.8:
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-
-# (Flash Attention 2 removed from this project configuration.)
+```cmd
+cd asr && cargo build
+cd tts && cargo build
 ```
 
-### 2. Set up OpenClaw Container
+For optimised builds:
 
-```powershell
-.\container-setup.ps1
+```cmd
+cd asr && cargo build --release
+cd tts && cargo build --release
 ```
 
-### 3. Run the Application
+## Running
 
-```powershell
-.\.venv\Scripts\Activate.ps1
-python ptt.py
+### ASR — transcribe an audio file
 
-# Or with debug mode (confirm before sending):
-python ptt.py -d
+```cmd
+cd asr
+cargo run -- audio.wav
+cargo run -- audio.wav --model-dir ./models/Qwen3-ASR-1.7b
+cargo run -- audio.wav --config asr_config.toml
 ```
 
-## Usage
+### TTS — synthesise speech
 
-| Hotkey | Action |
-|--------|--------|
-| `Ctrl+Alt+Space` | Toggle recording (start/stop) |
-| `Ctrl+Alt+I` | Attach clipboard image (while recording) |
-| `Ctrl+Alt+U` | Toggle ASR model load/unload |
-| `Escape` or `Ctrl+C` | Exit the application |
+The model is downloaded automatically from HuggingFace on first run:
 
-### Workflow
+```cmd
+cd tts
+cargo run -- "Bonjour le monde"
+cargo run -- "Hello world" --voice ryan --language english --output out.wav
+cargo run -- "Salut" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice --voice serena
+```
 
-1. Press `Ctrl+Alt+Space` to start recording (you'll hear a beep)
-2. Speak your message - transcription streams in real-time!
-3. Optionally press `Ctrl+Alt+I` to attach an image from clipboard
-4. Press `Ctrl+Alt+Space` again to stop recording
-5. The complete transcription is sent to OpenClaw
+To use a local model directory instead:
+
+```cmd
+cargo run -- "Bonjour" --model-dir ./models/1.7b-base
+```
+
+#### Voice cloning with voice profiles
+
+Cloned voices are used exactly like preset speakers. Place a reference audio
+file in `tts/voices/<name>/` and use it by name:
+
+```
+tts/voices/
+  justamon/
+    reference.wav           ← required: a short sample of the voice to clone
+    transcript.txt          ← optional: transcript of the audio (enables ICL mode)
+```
+
+Then synthesise with the cloned voice — no extra flags needed:
+
+```cmd
+cargo run -- "Hello world" --voice justamon
+```
+
+This works the same as `--voice ryan`; the engine automatically detects that
+`justamon` is a voice profile (not a preset) and uses voice cloning under the
+hood. If `transcript.txt` is present, ICL mode is used for higher quality;
+otherwise x-vector mode is used (faster, no transcript needed).
+
+> **Note:** Voice cloning requires a **Base** model (e.g.
+> `Qwen/Qwen3-TTS-12Hz-1.7B-Base`). CustomVoice models only support preset
+> speakers.
+
+#### Ad-hoc voice cloning (without a voice profile)
+
+You can also pass reference audio directly via CLI flags:
+
+```cmd
+cargo run -- "Clone this voice" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-Base \
+  --ref-audio reference.wav --ref-text "transcript of reference audio"
+```
+
+#### Text-described voice design
+
+VoiceDesign models accept a natural-language voice description:
+
+```cmd
+cargo run -- "Hello" --model-id Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign \
+  --instruct "A cheerful young female voice with high pitch"
+```
 
 ## Configuration
 
-Edit `ptt.toml` to customize settings:
+Both binaries accept an optional `--config <path>` TOML file.
+CLI flags override config-file values, which override built-in defaults.
+
+<details>
+<summary>Example ASR config (<code>asr_config.toml</code>)</summary>
 
 ```toml
-[hotkey]
-toggle = "<ctrl>+<alt>+<space>"
-attach_clipboard_image = "<ctrl>+<alt>+i"
-unload_model = "<ctrl>+<alt>+u"
-
-[audio]
-tmp_dir = "%TEMP%"
-rate = 16000
-channels = 1
-
-# =============================================================================
-# ASR (Automatic Speech Recognition) Configuration
-# =============================================================================
-[asr]
-# Backend: "whisper" (OpenAI) or "huggingface" (Qwen3-ASR, etc.)
-backend = "huggingface"
-save_transcription = false
-
-# -----------------------------------------------------------------------------
-# Whisper Backend Settings (used when backend = "whisper")
-# -----------------------------------------------------------------------------
-[asr.whisper]
-model = "large"           # tiny, base, small, medium, large, large-v2, large-v3
-language = "fr"
-force_fp32 = false        # false = use FP16 on GPU (faster)
-initial_prompt = ""       # Guide transcription style
-suppress_fillers = false  # Suppress "uh", "um", etc.
-
-# -----------------------------------------------------------------------------
-# HuggingFace Backend Settings (used when backend = "huggingface")
-# -----------------------------------------------------------------------------
-[asr.huggingface]
-model = "Qwen/Qwen3-ASR-1.7B"
-language = "fr"
-torch_dtype = "float16"   # float16, bfloat16, or float32
-device_map_auto = true    # Automatic GPU placement
-
-[streaming]
-chunk_duration = 5.0      # Seconds per chunk
-overlap_duration = 1.0    # Overlap to avoid cutting words
-
-[reconciler]
-# Algorithm for merging overlapping segments
-# Options: "word_overlap" (fast), "fuzzy" (handles typos), "llm" (best accuracy)
-algorithm = "word_overlap"
-
-# Word overlap settings
-min_overlap_words = 3
-max_context_words = 15
-
-# Fuzzy settings (requires: pip install rapidfuzz)
-fuzzy_threshold = 0.8
-
-# LLM settings (requires: pip install transformers)
-llm_model = "HuggingFaceTB/SmolLM2-360M-Instruct"
-llm_device = "cuda"
-
-[beep]
-start_stop = true
-every_seconds = 30
-frequency = 800
-duration_ms = 200
-
-[clipboard]
-prefix = "whisper_ptt_clip_"
-delete_after_send = true
-
-[openclaw]
-send = true
-container_name = "openclaw-agent"
-session_id = "agent:main:main"
-single_line = false
-max_chars = 8000
-shared_dir = "./shared"
-```
-
-## ASR Backend Comparison
-
-### HuggingFace (Default)
-
-Best for modern models like Qwen3-ASR.
-
-```toml
-[asr]
-backend = "huggingface"
-
-[asr.huggingface]
-model = "Qwen/Qwen3-ASR-1.7B"
-```
-
-### OpenAI Whisper
-
-Proven and reliable, supports multiple model sizes.
-
-```toml
-[asr]
-backend = "whisper"
-
-[asr.whisper]
-model = "large"
-initial_prompt = "Clear transcription without filler words."
-suppress_fillers = true
-```
-
-## Whisper Models
-
-| Model | Size | Speed | Accuracy |
-|-------|------|-------|----------|
-| tiny | 39M | Fastest | Basic |
-| base | 74M | Fast | Good |
-| small | 244M | Medium | Better |
-| medium | 769M | Slow | Great |
-| large | 1550M | Slowest | Best |
-
-## Reconciler Algorithms
-
-The reconciler merges overlapping transcription segments from streaming audio:
-
-| Algorithm | Speed | Accuracy | Dependencies | Use Case |
-|-----------|-------|----------|--------------|----------|
-| `none` | Fastest | N/A | None | No reconciliation (no streaming) |
-| `word_overlap` | Fast | Good | None | Default, reliable |
-| `fuzzy` | Fast | Better | `rapidfuzz` | Handles transcription errors |
-| `llm` | Slower | Best | `transformers` | Complex speech, accents |
-
-### Example: How Reconciliation Works
-
-```
-Chunk 1: "Hello my name is John and I"
-Chunk 2 (with overlap): "John and I work at the company"
-Reconciled: "Hello my name is John and I work at the company"
-```
-
-## Text-to-Speech Server (OpenAI-Compatible)
-
-This project also includes a FastAPI server that exposes an OpenAI-style TTS endpoint
-backed by Qwen3-TTS-12Hz-1.7B-Base for sample-based voice cloning.
-
-### Install
-
-```powershell
-pip install -r tts_server/requirements.txt
-```
-
-### Configure
-
-Edit `tts.toml`:
-
-```toml
-[server]
-host = "127.0.0.1"
-port = 8001
-
 [model]
-model = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
-device_map = "cuda:0"
-torch_dtype = "bfloat16"
-language = "English"
-voices_dir = "./tts_server/voices"
-
-[output]
-response_format = "wav"
+model_dir = "./models/Qwen3-ASR-1.7b"
+language  = "fr"
 ```
 
-### Run
+</details>
 
-```powershell
-python -m tts_server
+<details>
+<summary>Example TTS config (<code>tts_config.toml</code>)</summary>
+
+```toml
+[defaults]
+voice = "ryan"
+language = "english"
+
+[defaults.model]
+type = "huggingface"
+repo = "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+
+[engine]
+device = "cuda"
+dtype = "bf16"
+model_cache_dir = "./models"
+voices_dir = "./voices"
+
+[pipeline]
+pre = []
+post = []
+
+[models.fast_local]
+type = "local"
+path = "/models/qwen-fast"
 ```
 
-### Example Request
+</details>
 
-```bash
-curl http://127.0.0.1:8001/v1/audio/speech ^
-  -H "Content-Type: application/json" ^
-  -d "{\"input\":\"Hello world\",\"voice_sample\":\"my_voice\"}" ^
-  --output output.wav
-```
+### Available TTS models
 
-Notes:
-- `voice_sample` is required — it selects a voice sample folder for cloning.
-- Supported `response_format`: `wav`, `flac`, `ogg`, `pcm`
+| Model | HuggingFace ID | Size | Speaker Conditioning |
+|---|---|---|---|
+| 0.6B Base | `Qwen/Qwen3-TTS-12Hz-0.6B-Base` | 1.8 GB | Voice cloning from reference audio |
+| 0.6B CustomVoice | `Qwen/Qwen3-TTS-12Hz-0.6B-CustomVoice` | 1.8 GB | 9 preset speakers |
+| 1.7B Base | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` | 3.9 GB | Voice cloning from reference audio |
+| 1.7B CustomVoice | `Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice` | 3.9 GB | 9 preset speakers |
+| 1.7B VoiceDesign | `Qwen/Qwen3-TTS-12Hz-1.7B-VoiceDesign` | 3.8 GB | Text-described voices |
 
-### Voice Samples
+Available preset speakers (CustomVoice models): `serena`, `vivian`, `unclefu`,
+`ryan`, `aiden`, `onoanna`, `sohee`, `eric`, `dylan`.
 
-Place samples under `voices_dir`:
+Custom cloned voices can be added by creating a directory in `tts/voices/`
+(see [Voice cloning with voice profiles](#voice-cloning-with-voice-profiles) above).
 
-```
-tts_server/voices/my_voice/
-├── audio.wav
-└── text.txt
-```
+## Dependency notes
 
-You can also list available speakers/languages and the sample layout:
+| Crate | Constraint | Reason |
+|---|---|---|
+| **asr** | `candle-core/nn/transformers = "=0.9.1"` | `aha`'s `match DType` is non-exhaustive for candle 0.9.2+ (`I16`, `I32`, `F8E4M3` variants) |
+| **tts** | `qwen3-tts` latest (uses candle 0.9.2) | `sdpa()` API requires the 7-arg signature from candle-nn 0.9.2+ |
 
-```bash
-curl http://127.0.0.1:8001/v1/audio/voices
-```
+These two candle versions are **mutually incompatible**, which is why `asr` and
+`tts` must be compiled as separate Cargo projects.
 
-## Project Structure
+## Python stack (removed)
 
-```
-transcrption/
-├── ptt/                      # Main package
-│   ├── __init__.py
-│   ├── __main__.py           # Entry point (python -m ptt)
-│   ├── config.py             # Configuration loader
-│   ├── recorder.py           # Audio recording with chunking
-│   ├── transcriber.py        # ASR backends (Whisper, HuggingFace)
-│   ├── openclaw.py           # OpenClaw integration
-│   ├── hotkeys.py            # Hotkey handling
-│   ├── reconcilers/          # Text reconciliation
-│   │   ├── __init__.py       # Factory function
-│   │   ├── base.py           # Abstract base class
-│   │   ├── word_overlap.py   # Word-based overlap detection
-│   │   ├── fuzzy.py          # Fuzzy string matching
-│   │   └── llm.py            # LLM-based reconciliation
-│   └── utils/
-│       ├── __init__.py
-│       ├── audio.py          # Audio utilities
-│       └── logging.py        # Logging setup
-│   └── requirements.txt      # PTT dependencies
-├── ptt.py                    # Simple launcher
-├── ptt.toml                  # Configuration
-├── tts_server/               # OpenAI-compatible TTS server
-│   ├── __main__.py           # Entry point (python -m tts_server)
-│   ├── config.py             # TTS server configuration
-│   ├── model.py              # Qwen3 TTS wrapper
-│   └── server.py             # FastAPI app
-│   └── requirements.txt      # TTS server dependencies
-├── tts.toml                  # TTS server configuration
-├── setup.ps1
-├── container-setup.ps1
-├── Containerfile
-├── shared/                   # Shared with container
-│   └── logs/
-└── README.md
-```
-
-## Troubleshooting
-
-### No GPU detected (using CPU)
-Install PyTorch with CUDA 12.8 support:
-```powershell
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
-```
-
-### Flash Attention 2 not supported
-Flash Attention 2 is no longer part of this project configuration.
-
-### "podman not found"
-Install Podman Desktop from https://podman-desktop.io/
-
-### FFmpeg errors
-```powershell
-winget install Gyan.FFmpeg
-# Restart PowerShell after installation
-```
-
-### Hotkeys not working
-- Make sure no other application is capturing the same hotkey
-- Try running as administrator
-
-### No audio recording
-- Check Windows sound settings for your microphone
-- Verify the microphone is set as default input device
-
-### HuggingFace model download slow
-Models are cached in `~/.cache/huggingface/`. First download may take time depending on model size.
+The original Python implementations (`ptt/`, `tts_server/`, `shared/`) have
+been replaced by the Rust crates and removed from the repository.
 
 ## License
 
-MIT
+Private — © clawdbot

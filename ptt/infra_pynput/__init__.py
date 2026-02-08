@@ -1,1 +1,0 @@
-"""Pynput keyboard adapter."""

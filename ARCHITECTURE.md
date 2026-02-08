@@ -1,333 +1,322 @@
-# Architecture Guide
+# Architecture
 
-This document describes the architecture shared by the **PTT** (Push-to-Talk / Speech-to-Text) and **TTS** (Text-to-Speech) modules, and explains how to extend them with new behaviours or model backends.
-
----
-
-## Design Pattern — Ports & Adapters (Hexagonal Architecture)
-
-Both modules follow the same three-layer structure:
-
-```
-module/
-  domain/          ← pure contracts + data models (no framework deps)
-    ports.py       ← abstract base classes (the "ports")
-    models.py      ← dataclasses consumed by every layer
-  application/     ← orchestration, config, factory wiring
-    config.py      ← configuration dataclasses + TOML loader
-    service.py     ← application service that coordinates ports
-    factories.py   ← factory functions that pick the right adapter
-  infra_<name>/    ← one directory per swappable adapter
-    <impl>.py      ← concrete class implementing a port
-```
-
-### Key principles
-
-| Principle | How it's applied |
-|---|---|
-| **Dependency inversion** | Domain ports define interfaces. Infrastructure adapters implement them. No domain code imports infra code. |
-| **Application decides** | The `application/` layer reads config and calls a **factory** that selects the right adapter at runtime. |
-| **One port, N adapters** | Each capability (transcription, TTS, reconciliation, recording, …) has exactly one abstract port and one or more concrete adapters. |
-| **Lazy imports** | Factories use local `from … import` so heavy dependencies (torch, whisper, qwen_tts, …) are only loaded when the adapter is actually chosen. |
+This document describes the hexagonal (ports & adapters) architecture used across
+the Rust crates. The design mirrors the Python `ptt`, `tts_server`, and
+`shared` modules they replace.
 
 ---
 
-## Module Layout
+## Design principles
 
-### TTS (`tts_server/`)
-
-```
-tts_server/
-  __main__.py                      ← python -m tts_server
-  domain/
-    ports.py                       ← TTSModel (ABC)
-    models.py                      ← SynthesisResult
-  application/
-    config.py                      ← TTSConfig, load_config()
-    tts_service.py                 ← TTSService + create_tts_model() factory
-  infra_pytorch/
-    qwen_model.py                  ← QwenTTSWrapper(TTSModel)
-  infra_web/
-    api.py                         ← FastAPI /v1/audio/speech endpoint
-  infra_cli/
-    cli.py                         ← uvicorn runner
-  voices/                          ← voice sample presets (audio.wav + text.txt)
-```
-
-**Port** → `TTSModel`
-**Adapters** → `QwenTTSWrapper` (add more in `infra_<name>/`)
-
-### PTT (`ptt/`)
-
-```
-ptt/
-  __main__.py                      ← python -m ptt --daemon | --api | --file
-  domain/
-    ports.py                       ← BaseTranscriber (ABC), BaseReconciler (ABC)
-    models.py                      ← TranscriptionResult, ReconciliationResult, AudioChunk
-  application/
-    config.py                      ← Config, load_config()
-    factories.py                   ← create_transcriber(), create_reconciler()
-    ptt_app.py                     ← PTTApplication orchestrator
-  infra_whisper/
-    transcriber.py                 ← WhisperTranscriber(BaseTranscriber)
-  infra_huggingface/
-    transcriber.py                 ← HuggingFaceTranscriber(BaseTranscriber)
-  infra_reconcilers/
-    word_overlap.py, fuzzy.py,     ← reconciler adapters
-    llm.py, none.py
-  infra_sounddevice/
-    recorder.py                    ← StreamingRecorder
-  infra_pynput/
-    hotkeys.py                     ← HotkeyManager
-  infra_podman/
-    openclaw.py                    ← OpenClawClient
-  infra_daemon/
-    daemon.py                      ← PTTDaemon (hotkey + remote API)
-  infra_web/
-    api.py                         ← FastAPI /v1/audio/transcriptions
-    api_client.py                  ← HTTP client for remote transcription
-    cli.py                         ← uvicorn runner
-  utils/
-    audio.py                       ← prepare_audio(), play_beep()
-    logging.py                     ← shared logger setup
-```
-
-**Ports** → `BaseTranscriber`, `BaseReconciler`
-**Adapters** → Whisper, HuggingFace (transcribers) · WordOverlap, Fuzzy, LLM, NoOp (reconcilers)
+1. **Domain at the centre** — business rules and data models live in `domain/`
+   and depend on *nothing* external.
+2. **Ports are traits** — abstract contracts (`trait`) defined in the domain that
+   infrastructure adapters implement.
+3. **Adapters are plug-ins** — each `infra_*` module provides one concrete
+   implementation of a domain port. Swapping backends (e.g. a different ASR
+   engine) means adding a new `infra_*` module without touching the domain.
+4. **Application layer orchestrates** — services, configuration, and factories
+   live in `application/`. They depend on domain traits, never on concrete
+   adapters.
+5. **`main.rs` is the composition root** — the binary wires adapters to services
+   and runs the program. It is the only place that knows about concrete types.
 
 ---
 
-## Data Flow
+## Project structure
 
-### TTS request flow
+`asr` and `tts` are **independent Cargo projects** — each has its own
+`Cargo.toml`, `Cargo.lock`, and dependency tree. They cannot be in a single
+workspace because `aha` requires candle 0.9.1 while `qwen3-tts` requires
+candle 0.9.2, and these are mutually incompatible.
 
-```
-HTTP request
-  → infra_web/api.py (FastAPI)
-    → application/tts_service.py (TTSService.synthesize)
-      → domain/ports.py (TTSModel.generate)  ← abstract call
-        → infra_pytorch/qwen_model.py        ← concrete adapter
-      ← (np.ndarray, sample_rate)
-    ← SynthesisResult
-  ← WAV / FLAC / OGG bytes
-```
-
-### PTT push-to-talk flow
+`shared_rs` is a library crate referenced by both via `path = "../shared_rs"`.
 
 ```
-Hotkey press
-  → infra_pynput/hotkeys.py (HotkeyManager)
-    → application/ptt_app.py (PTTApplication._start_recording)
-      → infra_sounddevice/recorder.py (StreamingRecorder)
-        ↓ audio chunks
-      → domain/ports.py (BaseTranscriber.transcribe_array)  ← abstract
-        → infra_whisper/ or infra_huggingface/               ← concrete
-      → domain/ports.py (BaseReconciler.add_segment)         ← abstract
-        → infra_reconcilers/*                                 ← concrete
-      ← reconciled text
-    → infra_podman/openclaw.py (send to AI agent)
+├── shared_rs/                 ← shared crate (pub name: "shared")
+│   └── src/
+│       ├── domain/
+│       │   ├── pipeline.rs        Stage trait, PipelineContext, MediaType
+│       │   └── pipeline_runner.rs Pipeline (ordered stage runner)
+│       └── application/
+│           └── pipeline_factory.rs StageRegistry, builder-based pipeline construction
+│
+├── asr/                       ← ASR crate (independent Cargo project)
+│   ├── Cargo.toml                 candle 0.9.1, aha
+│   ├── Cargo.lock
+│   └── src/
+│       ├── domain/
+│       │   ├── models.rs          TranscriptionResult
+│       │   └── ports.rs           Transcriber trait
+│       ├── application/
+│       │   ├── config.rs          AsrConfig, ModelConfig, TOML loader
+│       │   └── service.rs         AsrService (orchestrator)
+│       ├── infra_aha/
+│       │   └── transcriber.rs     AhaTranscriber — aha/Qwen3-ASR adapter
+│       ├── lib.rs
+│       └── main.rs                CLI composition root
+│
+└── tts/                       ← TTS crate (independent Cargo project)
+    ├── Cargo.toml                 candle 0.9.2 (via qwen3-tts)
+    ├── Cargo.lock
+    └── src/
+        ├── domain/
+        │   ├── value_objects.rs    ModelRef, ModelId, VoiceId, Language, AudioFormat, SampleRate
+        │   ├── models.rs          SynthesisRequest, SynthesisResult, ResolvedModel, SynthesisOptions
+        │   ├── pipeline.rs        PreProcessorContext, PostProcessorContext
+        │   └── ports.rs           TtsEnginePort, ModelProviderPort, PreProcessor, PostProcessor
+        ├── application/
+        │   ├── config.rs          TtsConfig, ConfigService, TOML loader, override merging
+        │   ├── use_cases.rs       SynthesizeSpeechUseCase (orchestrator)
+        │   ├── model_resolver.rs  ModelResolver (routes HF vs Local)
+        │   └── pipeline_registry.rs PipelineRegistry (builds pre/post chains)
+        ├── infra_qwen3/
+        │   ├── engine.rs          Qwen3TtsEngine — TtsEnginePort, dispatch + model loading
+        │   ├── engine_speaker.rs  Preset speaker synthesis (CustomVoice models)
+        │   ├── engine_clone.rs    Voice clone synthesis from voice profiles (Base models)
+        │   └── mapping.rs         Domain ↔ qwen3-tts type mapping (shared)
+        ├── infra_hf/
+        │   └── provider.rs        HuggingFaceModelProvider (ModelProviderPort)
+        ├── infra_local/
+        │   └── provider.rs        LocalModelProvider (ModelProviderPort)
+        ├── infra_cli/
+        │   └── cli.rs             CliArgs — clap-based CLI adapter
+        ├── infra_web/
+        │   └── api.rs             Axum REST endpoints (stub)
+        ├── lib.rs
+        └── main.rs                CLI composition root
 ```
 
 ---
 
-## How to Add a New TTS Model
+## Layer-by-layer
 
-### 1. Create an adapter directory
+### 1. Domain (`domain/`)
 
-```
-tts_server/infra_bark/
-  __init__.py
-  bark_model.py
-```
+Pure Rust types and traits with **zero external dependencies** (except `anyhow`
+for ergonomic errors).
 
-### 2. Implement the `TTSModel` port
+| Crate | File | Contents |
+|---|---|---|
+| **shared** | `domain/pipeline.rs` | `Stage` trait, `PipelineContext`, `StageResult`, `MediaType` enum |
+| **shared** | `domain/pipeline_runner.rs` | `Pipeline` — runs an ordered `Vec<Box<dyn Stage>>` with timing |
+| **asr** | `domain/models.rs` | `TranscriptionResult` (text, duration, audio length) |
+| **asr** | `domain/ports.rs` | `Transcriber` trait — `load_model`, `unload_model`, `transcribe_file` |
+| **tts** | `domain/value_objects.rs` | `ModelRef`, `ModelId`, `VoiceId`, `Language`, `AudioFormat`, `SampleRate` |
+| **tts** | `domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel`, `SynthesisOptions` |
+| **tts** | `domain/pipeline.rs` | `PreProcessorContext`, `PostProcessorContext` |
+| **tts** | `domain/ports.rs` | `TtsEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` traits |
 
-```python
-# tts_server/infra_bark/bark_model.py
+#### Port traits
 
-from tts_server.domain.ports import TTSModel
-from tts_server.application.config import ModelConfig
-
-class BarkTTSWrapper(TTSModel):
-    def __init__(self, config: ModelConfig) -> None:
-        self._config = config
-        self._model = None
-
-    def load(self) -> None:
-        # Load the Bark model
-        ...
-
-    def unload(self) -> None:
-        # Free GPU memory
-        ...
-
-    def generate(
-        self,
-        text,
-        voice_preset=None,
-        voice_sample_path=None,
-        voice_sample_text=None,
-        guidance=None,
-    ):
-        # Generate audio → return (np.ndarray, sample_rate)
-        ...
-
-    def get_supported_speakers(self):
-        return ["v2/en_speaker_0", "v2/en_speaker_1", ...]
-
-    def get_supported_languages(self):
-        return ["en", "fr", "de", ...]
+```text
+  ┌──────────────────────────────────────────────────────────────────┐
+  │                          Domain                                  │
+  │                                                                  │
+  │  trait Transcriber              trait TtsEnginePort               │
+  │    ├ is_loaded()                  └ synthesize(model, request)    │
+  │    ├ load_model()                                                │
+  │    ├ unload_model()             trait ModelProviderPort           │
+  │    └ transcribe_file()            └ prepare(model_ref)           │
+  │                                                                  │
+  │  trait Stage                    trait PreProcessor                │
+  │    ├ name()                       ├ name()                       │
+  │    ├ input_type() / output_type() └ process(PreProcessorCtx)     │
+  │    ├ process(ctx) → ctx                                          │
+  │    └ load() / unload()          trait PostProcessor               │
+  │                                   ├ name()                       │
+  │                                   └ process(PostProcessorCtx)    │
+  └──────────────────────────────────────────────────────────────────┘
 ```
 
-### 3. Register it in the factory
+> **Note:** Port traits require `Send` (movable across threads) but **not**
+> `Sync`, because the upstream ML crates (`qwen3-tts`, `aha`) use `RefCell`
+> internally. Thread-safe sharing can be achieved by wrapping adapters in
+> `Mutex<T>` at the service level if needed.
 
-```python
-# tts_server/application/tts_service.py  →  create_tts_model()
+### 2. Application (`application/`)
 
-def create_tts_model(config: TTSConfig) -> TTSModel:
-    backend = config.model.model.lower()
+Orchestration logic that depends only on domain traits and models.
 
-    if "bark" in backend:
-        from tts_server.infra_bark.bark_model import BarkTTSWrapper
-        return BarkTTSWrapper(config.model)
+| Crate | File | Responsibility |
+|---|---|---|
+| **shared** | `application/pipeline_factory.rs` | `StageRegistry` — register builders, build `Pipeline` from config |
+| **asr** | `application/config.rs` | `AsrConfig` / `ModelConfig` — TOML-deserialised settings |
+| **asr** | `application/service.rs` | `AsrService` — owns a `Box<dyn Transcriber>`, auto-loads on first call |
+| **tts** | `application/config.rs` | `TtsConfig`, `ConfigService` — TOML config with override merging |
+| **tts** | `application/use_cases.rs` | `SynthesizeSpeechUseCase` — orchestrates model resolution, pipeline, synthesis |
+| **tts** | `application/model_resolver.rs` | `ModelResolver` — routes `ModelRef` to HF or local provider |
+| **tts** | `application/pipeline_registry.rs` | `PipelineRegistry` — builds pre/post processor chains from config |
 
-    # default: Qwen
-    from tts_server.infra_pytorch.qwen_model import QwenTTSWrapper
-    return QwenTTSWrapper(config.model)
+The services never `use` a concrete adapter — they receive a trait object via
+their constructor:
+
+```rust
+// tts/src/application/use_cases.rs
+pub struct SynthesizeSpeechUseCase {
+    config: TtsConfig,
+    model_resolver: ModelResolver,
+    engine: Box<dyn TtsEnginePort>,       // ← domain port, not Qwen3TtsEngine
+    pipeline_registry: PipelineRegistry,
+}
 ```
 
-No other files need to change — the API layer, service, and domain port are untouched.
+### 3. Infrastructure (`infra_*/`)
+
+Concrete implementations that bridge domain ports to external libraries.
+
+| Crate | Module | Adapter | Implements | Backend |
+|---|---|---|---|---|
+| **asr** | `infra_aha/` | `AhaTranscriber` | `Transcriber` | [`aha`](https://github.com/jhqxxx/aha) — candle 0.9.1 Qwen3-ASR |
+| **tts** | `infra_qwen3/` | `Qwen3TtsEngine` | `TtsEnginePort` | [`qwen3-tts`](https://github.com/TrevorS/qwen3-tts-rs) — candle 0.9.2 Qwen3-TTS |
+| **tts** | `infra_hf/` | `HuggingFaceModelProvider` | `ModelProviderPort` | HuggingFace Hub download + caching |
+| **tts** | `infra_local/` | `LocalModelProvider` | `ModelProviderPort` | Local directory validation |
+
+Adding a new backend (e.g. a Whisper adapter, an OpenAI API adapter) means:
+
+1. Create a new `infra_<name>/` module.
+2. Implement the relevant domain trait.
+3. Wire it in `main.rs` — no other code changes needed.
+
+### 4. Composition root (`main.rs`)
+
+The binary entry point is the **only place** that knows about both the concrete
+adapter *and* the application service. It:
+
+1. Parses CLI args (`clap`).
+2. Loads TOML config.
+3. Constructs the concrete adapter.
+4. Injects it into the service as a `Box<dyn Port>`.
+5. Runs the workflow.
+
+```text
+  main.rs (TTS)
+    │
+    ├─ parse CLI args    (infra_cli::CliArgs)
+    ├─ load config       (application::ConfigService)
+    │
+    ├─ create providers  ←── infra_hf::HuggingFaceModelProvider
+    │                    ←── infra_local::LocalModelProvider
+    ├─ create resolver   ←── application::ModelResolver(hf, local)
+    ├─ create engine     ←── infra_qwen3::Qwen3TtsEngine
+    │
+    ├─ create use case   ←── application::SynthesizeSpeechUseCase(
+    │                            config, resolver, Box<dyn TtsEnginePort>, registry)
+    ├─ build request     (merge config defaults + CLI overrides)
+    └─ use_case.execute(request)
+```
 
 ---
 
-## How to Add a New ASR Transcriber
+## Shared pipeline engine
 
-### 1. Create an adapter directory
+The `shared` crate provides a reusable **pipeline pattern** for chaining
+processing stages (pre-processors, models, post-processors):
 
-```
-ptt/infra_faster_whisper/
-  __init__.py
-  transcriber.py
-```
-
-### 2. Implement the `BaseTranscriber` port
-
-```python
-# ptt/infra_faster_whisper/transcriber.py
-
-from ptt.domain.ports import BaseTranscriber
-from ptt.domain.models import TranscriptionResult
-from ptt.application.config import Config
-
-class FasterWhisperTranscriber(BaseTranscriber):
-    def __init__(self, config: Config) -> None:
-        self._config = config
-        self._model = None
-
-    @property
-    def is_loaded(self) -> bool:
-        return self._model is not None
-
-    def load_model(self) -> bool:
-        from faster_whisper import WhisperModel
-        self._model = WhisperModel(self._config.asr.whisper.model)
-        return True
-
-    def unload_model(self) -> bool:
-        self._model = None
-        return True
-
-    def transcribe_file(self, audio_path):
-        segments, info = self._model.transcribe(str(audio_path))
-        text = " ".join(seg.text for seg in segments)
-        return TranscriptionResult(text=text, segments=[], duration=0, audio_duration=info.duration)
-
-    def transcribe_array(self, audio_data, sample_rate, on_segment=None):
-        # Use ptt.utils.audio.prepare_audio() to convert to 16 kHz float32
-        from ptt.utils.audio import prepare_audio
-        audio = prepare_audio(audio_data, sample_rate)
-        ...
+```text
+  PipelineContext ──► Stage 1 ──► Stage 2 ──► … ──► Stage N ──► PipelineContext
+                      (timed)     (timed)            (timed)
 ```
 
-### 3. Register it in the factory
+- **`Stage`** — trait with `process(ctx) → ctx`, optional `load()`/`unload()`.
+- **`Pipeline`** — named sequence of `Box<dyn Stage>`, runs all stages in order
+  and records per-stage timing in `ctx.stage_results`.
+- **`StageRegistry`** — maps type names to builder functions; constructs
+  pipelines from TOML configuration.
 
-```python
-# ptt/application/factories.py  →  create_transcriber()
-
-def create_transcriber(config: Config) -> BaseTranscriber:
-    backend = config.asr.backend.lower()
-
-    if backend == "faster_whisper":
-        from ptt.infra_faster_whisper.transcriber import FasterWhisperTranscriber
-        return FasterWhisperTranscriber(config)
-    ...
-```
-
-### 4. (Optional) Add config fields
-
-Add any new settings to the relevant dataclass in `ptt/application/config.py` and parse them in `load_config()`.
+This mirrors the Python `shared.domain.pipeline` / `shared.application.pipeline_factory`.
 
 ---
 
-## How to Add a New Reconciler
+## Dependency graph
 
-Same pattern — implement `BaseReconciler.reconcile()` and register in `create_reconciler()`:
-
-```python
-# ptt/infra_reconcilers/my_algo.py
-
-from ptt.domain.ports import BaseReconciler
-from ptt.domain.models import ReconciliationResult
-
-class MyAlgoReconciler(BaseReconciler):
-    def reconcile(self, previous_text: str, current_text: str) -> ReconciliationResult:
-        # Your overlap-detection / merging logic here
-        ...
+```text
+  ┌──────────┐         ┌──────────┐
+  │   asr    │         │   tts    │       ← independent Cargo projects
+  │candle 0.9.1        │candle 0.9.2      (separate Cargo.lock each)
+  └────┬─────┘         └────┬─────┘
+       │                    │
+       ├── aha              ├── qwen3-tts
+       │                    │
+       ▼                    ▼
+  ┌───────────────────────────────┐
+  │           shared              │       ← library crate (path dep)
+  └───────────────────────────────┘
 ```
 
-Then add a branch in `ptt/application/factories.py → create_reconciler()`.
+Each crate specifies its own dependency versions directly in its `Cargo.toml`.
+There is **no workspace** — `asr` and `tts` are compiled separately because:
+
+- `aha` requires candle **0.9.1** (non-exhaustive `match DType` breaks on 0.9.2+)
+- `qwen3-tts` requires candle **0.9.2** (7-arg `sdpa()` API)
 
 ---
 
-## How to Add a New Behaviour (e.g. a new I/O adapter)
+## Model loading
 
-For non-model infrastructure (audio input, hotkeys, network clients, …):
+| Crate | Model source | Default |
+|---|---|---|
+| **asr** | Local directory | `./models/Qwen3-ASR-1.7b` |
+| **tts** | HuggingFace Hub (auto-download) or local path | `Qwen/Qwen3-TTS-12Hz-1.7B-Base` |
 
-1. **Create `ptt/infra_<name>/`** with your implementation.
-2. **If the behaviour is substitutable** (e.g. a different audio backend), define or extend a port in `domain/ports.py` and wire a factory.
-3. **If it's additive** (e.g. a new output target), just import and use it in the application layer (`ptt_app.py` or `daemon.py`).
+The TTS `model_id` config field accepts either a HuggingFace model ID
+(e.g. `Qwen/Qwen3-TTS-12Hz-1.7B-Base`) or a local directory path. When a HF
+ID is used, the model files are downloaded from HuggingFace Hub and assembled
+into a local staging directory (`engine.model_cache_dir`) that
+`Qwen3TTS::from_pretrained()` can load directly.
 
----
+### Voice profiles
 
-## Configuration
+Voice clone profiles are stored in `engine.voices_dir` (default `./voices/`):
 
-Both modules use TOML config files in the project root:
-
-| Module | Config file | Loader |
-|--------|-------------|--------|
-| TTS | `tts.toml` | `tts_server.application.config.load_config()` |
-| PTT | `ptt.toml` | `ptt.application.config.load_config()` |
-
-Configuration is parsed into typed dataclasses so new fields are self-documenting and IDE-friendly.
-
----
-
-## Running
-
-```bash
-# TTS server
-python -m tts_server                 # starts the FastAPI server
-
-# PTT interactive (push-to-talk with streaming)
-python ptt.py                        # default: local model + hotkeys
-
-# PTT daemon (hotkey recording → remote API transcription)
-python -m ptt --daemon
-
-# PTT API server
-python -m ptt --api
-
-# PTT file transcription
-python -m ptt --file path/to/audio.wav
 ```
+voices/
+  <voice_name>/
+    reference.wav        ← required: reference audio sample
+    transcript.txt       ← optional: transcript for ICL mode (better quality)
+```
+
+From the user's perspective, cloned voices work identically to preset speakers
+(`--voice justamon` vs `--voice ryan`). The engine transparently resolves
+the voice: preset names dispatch to `engine_speaker`, custom names look up a
+profile in `voices/` and dispatch to `engine_clone`.
+
+---
+
+## Python ↔ Rust mapping
+
+| Python module | Rust crate | Notes |
+|---|---|---|
+| `shared/domain/pipeline.py` | `shared_rs/src/domain/pipeline.rs` | `Stage`, `PipelineContext`, `MediaType` |
+| `shared/application/pipeline_factory.py` | `shared_rs/src/application/pipeline_factory.rs` | `StageRegistry` |
+| `ptt/domain/ports.py` | `asr/src/domain/ports.rs` | `Transcriber` trait |
+| `ptt/domain/models.py` | `asr/src/domain/models.rs` | `TranscriptionResult` |
+| `ptt/application/ptt_app.py` | `asr/src/application/service.rs` | `AsrService` |
+| `ptt/infra_huggingface/transcriber.py` | `asr/src/infra_aha/transcriber.rs` | `AhaTranscriber` (different backend) |
+| `tts_server/domain/ports.py` | `tts/src/domain/ports.rs` | `TtsEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` |
+| `tts_server/domain/models.py` | `tts/src/domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel` |
+| `tts_server/application/tts_service.py` | `tts/src/application/use_cases.rs` | `SynthesizeSpeechUseCase` |
+| `tts_server/infra_pytorch/model.py` | `tts/src/infra_qwen3/engine.rs` | `Qwen3TtsEngine` (candle backend) |
+
+---
+
+## Adding a new adapter
+
+Example: adding an OpenAI Whisper API adapter for ASR.
+
+```
+asr/src/
+  infra_openai/
+    mod.rs
+    transcriber.rs   ← implements Transcriber trait
+```
+
+1. **Create** `asr/src/infra_openai/mod.rs` and `transcriber.rs`.
+2. **Implement** `Transcriber` for your new struct.
+3. **Register** the module in `asr/src/lib.rs`: `pub mod infra_openai;`.
+4. **Wire** in `asr/src/main.rs`:
+   ```rust
+   let adapter = OpenAiTranscriber::new(api_key);
+   let mut service = AsrService::new(Box::new(adapter));
+   ```
+5. No changes to `domain/`, `application/`, or `shared`.

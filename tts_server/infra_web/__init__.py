@@ -1,1 +1,0 @@
-"""Web adapter for TTS."""

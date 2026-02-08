@@ -1,3 +1,0 @@
-"""
-TTS Server package.
-"""

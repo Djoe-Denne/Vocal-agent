@@ -75,9 +75,21 @@ dmypy.txt
 *.log
 shared/logs/
 
-# Audio output
-output.wav
+# ─── Rust ───────────────────────────────────────────────
+# Build artifacts
+target/
+**/*.rs.bk
 
-# TTS Server - Voice samples
-tts_server/voices/
+# Cargo lock files for binaries (keep for libraries)
+# asr/Cargo.lock and tts/Cargo.lock are committed
+# (they are independent binary projects, not library crates)
+
+# ─── Audio / TTS ────────────────────────────────────────
+# Audio output
+*.wav
+
+# TTS - Voice samples and cached models
 tts-test.ps1
+tts/models/
+tts/voices/
+asr/models/
