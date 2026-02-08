@@ -46,15 +46,25 @@ candle 0.9.2, and these are mutually incompatible.
 │   ├── Cargo.lock
 │   └── src/
 │       ├── domain/
-│       │   ├── models.rs          TranscriptionResult
-│       │   └── ports.rs           Transcriber trait
+│       │   ├── value_objects.rs    ModelRef, Language, SampleRate
+│       │   ├── models.rs          TranscriptionRequest, TranscriptionResult, ResolvedModel, TranscriptionOptions
+│       │   ├── pipeline.rs        PreProcessorContext, PostProcessorContext
+│       │   └── ports.rs           AsrEnginePort, ModelProviderPort, PreProcessor, PostProcessor
 │       ├── application/
-│       │   ├── config.rs          AsrConfig, ModelConfig, TOML loader
-│       │   └── service.rs         AsrService (orchestrator)
+│       │   ├── config.rs          AsrConfig, ConfigService, TOML loader, override merging
+│       │   ├── use_cases.rs       TranscribeAudioUseCase (orchestrator)
+│       │   ├── model_resolver.rs  ModelResolver (routes Local, future HF)
+│       │   └── pipeline_registry.rs PipelineRegistry (builds pre/post chains)
 │       ├── infra_aha/
-│       │   └── transcriber.rs     AhaTranscriber — aha/Qwen3-ASR adapter
-│       ├── lib.rs
-│       └── main.rs                CLI composition root
+│       │   └── transcriber.rs     AhaTranscriber — AsrEnginePort adapter
+│       ├── infra_local/
+│       │   └── provider.rs        LocalModelProvider (ModelProviderPort)
+│       ├── infra_cli/
+│       │   └── cli.rs             Args — clap-based CLI adapter (subcommands: transcribe, serve)
+│       ├── infra_web/
+│       │   └── api.rs             Axum REST endpoints (POST /transcribe, GET /health)
+│       ├── lib.rs                 Feature-gated module exports
+│       └── main.rs                Composition root (CLI + web server)
 │
 └── tts/                       ← TTS crate (independent Cargo project)
     ├── Cargo.toml                 candle 0.9.2 (via qwen3-tts)
@@ -100,8 +110,10 @@ for ergonomic errors).
 |---|---|---|
 | **shared** | `domain/pipeline.rs` | `Stage` trait, `PipelineContext`, `StageResult`, `MediaType` enum |
 | **shared** | `domain/pipeline_runner.rs` | `Pipeline` — runs an ordered `Vec<Box<dyn Stage>>` with timing |
-| **asr** | `domain/models.rs` | `TranscriptionResult` (text, duration, audio length) |
-| **asr** | `domain/ports.rs` | `Transcriber` trait — `load_model`, `unload_model`, `transcribe_file` |
+| **asr** | `domain/value_objects.rs` | `ModelRef`, `Language`, `SampleRate` |
+| **asr** | `domain/models.rs` | `TranscriptionRequest`, `TranscriptionResult`, `ResolvedModel`, `TranscriptionOptions`, `TranscriptionTiming` |
+| **asr** | `domain/pipeline.rs` | `PreProcessorContext`, `PostProcessorContext` |
+| **asr** | `domain/ports.rs` | `AsrEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` traits |
 | **tts** | `domain/value_objects.rs` | `ModelRef`, `ModelId`, `VoiceId`, `Language`, `AudioFormat`, `SampleRate` |
 | **tts** | `domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel`, `SynthesisOptions` |
 | **tts** | `domain/pipeline.rs` | `PreProcessorContext`, `PostProcessorContext` |
@@ -113,19 +125,25 @@ for ergonomic errors).
   ┌──────────────────────────────────────────────────────────────────┐
   │                          Domain                                  │
   │                                                                  │
-  │  trait Transcriber              trait TtsEnginePort               │
-  │    ├ is_loaded()                  └ synthesize(model, request)    │
-  │    ├ load_model()                                                │
-  │    ├ unload_model()             trait ModelProviderPort           │
-  │    └ transcribe_file()            └ prepare(model_ref)           │
+  │  trait AsrEnginePort            trait TtsEnginePort               │
+  │    └ transcribe(model, request)   └ synthesize(model, request)   │
   │                                                                  │
-  │  trait Stage                    trait PreProcessor                │
+  │  trait ModelProviderPort        trait ModelProviderPort           │
+  │    └ prepare(model_ref)           └ prepare(model_ref)           │
+  │                                                                  │
+  │  trait PreProcessor             trait PreProcessor                │
   │    ├ name()                       ├ name()                       │
-  │    ├ input_type() / output_type() └ process(PreProcessorCtx)     │
+  │    └ process(PreProcessorCtx)     └ process(PreProcessorCtx)     │
+  │                                                                  │
+  │  trait PostProcessor            trait PostProcessor               │
+  │    ├ name()                       ├ name()                       │
+  │    └ process(PostProcessorCtx)    └ process(PostProcessorCtx)    │
+  │                                                                  │
+  │  trait Stage (shared)                                             │
+  │    ├ name()                                                      │
+  │    ├ input_type() / output_type()                                │
   │    ├ process(ctx) → ctx                                          │
-  │    └ load() / unload()          trait PostProcessor               │
-  │                                   ├ name()                       │
-  │                                   └ process(PostProcessorCtx)    │
+  │    └ load() / unload()                                           │
   └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -141,17 +159,27 @@ Orchestration logic that depends only on domain traits and models.
 | Crate | File | Responsibility |
 |---|---|---|
 | **shared** | `application/pipeline_factory.rs` | `StageRegistry` — register builders, build `Pipeline` from config |
-| **asr** | `application/config.rs` | `AsrConfig` / `ModelConfig` — TOML-deserialised settings |
-| **asr** | `application/service.rs` | `AsrService` — owns a `Box<dyn Transcriber>`, auto-loads on first call |
+| **asr** | `application/config.rs` | `AsrConfig`, `ConfigService` — TOML config with override merging |
+| **asr** | `application/use_cases.rs` | `TranscribeAudioUseCase` — orchestrates model resolution, pipeline, transcription |
+| **asr** | `application/model_resolver.rs` | `ModelResolver` — routes `ModelRef` to local provider (future HF) |
+| **asr** | `application/pipeline_registry.rs` | `PipelineRegistry` — builds pre/post processor chains from config |
 | **tts** | `application/config.rs` | `TtsConfig`, `ConfigService` — TOML config with override merging |
 | **tts** | `application/use_cases.rs` | `SynthesizeSpeechUseCase` — orchestrates model resolution, pipeline, synthesis |
 | **tts** | `application/model_resolver.rs` | `ModelResolver` — routes `ModelRef` to HF or local provider |
 | **tts** | `application/pipeline_registry.rs` | `PipelineRegistry` — builds pre/post processor chains from config |
 
-The services never `use` a concrete adapter — they receive a trait object via
+The use cases never `use` a concrete adapter — they receive a trait object via
 their constructor:
 
 ```rust
+// asr/src/application/use_cases.rs
+pub struct TranscribeAudioUseCase {
+    config: AsrConfig,
+    model_resolver: ModelResolver,
+    engine: Box<dyn AsrEnginePort>,       // ← domain port, not AhaTranscriber
+    pipeline_registry: PipelineRegistry,
+}
+
 // tts/src/application/use_cases.rs
 pub struct SynthesizeSpeechUseCase {
     config: TtsConfig,
@@ -167,7 +195,10 @@ Concrete implementations that bridge domain ports to external libraries.
 
 | Crate | Module | Adapter | Implements | Backend |
 |---|---|---|---|---|
-| **asr** | `infra_aha/` | `AhaTranscriber` | `Transcriber` | [`aha`](https://github.com/jhqxxx/aha) — candle 0.9.1 Qwen3-ASR |
+| **asr** | `infra_aha/` | `AhaTranscriber` | `AsrEnginePort` | [`aha`](https://github.com/jhqxxx/aha) — candle 0.9.1 Qwen3-ASR |
+| **asr** | `infra_local/` | `LocalModelProvider` | `ModelProviderPort` | Local directory validation |
+| **asr** | `infra_cli/` | `Args`, `TranscribeArgs`, `ServeArgs` | — | Clap subcommands (transcribe, serve) |
+| **asr** | `infra_web/` | Axum router | — | REST API (`POST /transcribe`, `GET /health`) |
 | **tts** | `infra_qwen3/` | `Qwen3TtsEngine` | `TtsEnginePort` | [`qwen3-tts`](https://github.com/TrevorS/qwen3-tts-rs) — candle 0.9.2 Qwen3-TTS |
 | **tts** | `infra_hf/` | `HuggingFaceModelProvider` | `ModelProviderPort` | HuggingFace Hub download + caching |
 | **tts** | `infra_local/` | `LocalModelProvider` | `ModelProviderPort` | Local directory validation |
@@ -181,15 +212,31 @@ Adding a new backend (e.g. a Whisper adapter, an OpenAI API adapter) means:
 ### 4. Composition root (`main.rs`)
 
 The binary entry point is the **only place** that knows about both the concrete
-adapter *and* the application service. It:
+adapter *and* the application use case. It:
 
-1. Parses CLI args (`clap`).
-2. Loads TOML config.
-3. Constructs the concrete adapter.
-4. Injects it into the service as a `Box<dyn Port>`.
-5. Runs the workflow.
+1. Parses CLI args (`clap`) — determines mode (transcribe vs serve).
+2. Loads TOML config and applies CLI / env overrides.
+3. Constructs concrete adapters and providers.
+4. Injects them into the use case as `Box<dyn Port>`.
+5. Runs the workflow (one-shot transcription or web server).
 
 ```text
+  main.rs (ASR)
+    │
+    ├─ parse CLI args    (infra_cli::Args → Command::Transcribe | Command::Serve)
+    ├─ load config       (application::ConfigService)
+    │
+    ├─ create provider   ←── infra_local::LocalModelProvider
+    ├─ create resolver   ←── application::ModelResolver(local)
+    ├─ create engine     ←── infra_aha::AhaTranscriber
+    ├─ create registry   ←── application::PipelineRegistry (empty)
+    │
+    ├─ create use case   ←── application::TranscribeAudioUseCase(
+    │                            config, resolver, Box<dyn AsrEnginePort>, registry)
+    │
+    ├─[transcribe mode]  build request → use_case.execute(request)
+    └─[serve mode]       wrap use case in Arc<Mutex> → start Axum server
+
   main.rs (TTS)
     │
     ├─ parse CLI args    (infra_cli::CliArgs)
@@ -289,9 +336,9 @@ profile in `voices/` and dispatch to `engine_clone`.
 |---|---|---|
 | `shared/domain/pipeline.py` | `shared_rs/src/domain/pipeline.rs` | `Stage`, `PipelineContext`, `MediaType` |
 | `shared/application/pipeline_factory.py` | `shared_rs/src/application/pipeline_factory.rs` | `StageRegistry` |
-| `ptt/domain/ports.py` | `asr/src/domain/ports.rs` | `Transcriber` trait |
-| `ptt/domain/models.py` | `asr/src/domain/models.rs` | `TranscriptionResult` |
-| `ptt/application/ptt_app.py` | `asr/src/application/service.rs` | `AsrService` |
+| `ptt/domain/ports.py` | `asr/src/domain/ports.rs` | `AsrEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` |
+| `ptt/domain/models.py` | `asr/src/domain/models.rs` | `TranscriptionRequest`, `TranscriptionResult`, `ResolvedModel` |
+| `ptt/application/ptt_app.py` | `asr/src/application/use_cases.rs` | `TranscribeAudioUseCase` |
 | `ptt/infra_huggingface/transcriber.py` | `asr/src/infra_aha/transcriber.rs` | `AhaTranscriber` (different backend) |
 | `tts_server/domain/ports.py` | `tts/src/domain/ports.rs` | `TtsEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` |
 | `tts_server/domain/models.py` | `tts/src/domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel` |
@@ -308,15 +355,32 @@ Example: adding an OpenAI Whisper API adapter for ASR.
 asr/src/
   infra_openai/
     mod.rs
-    transcriber.rs   ← implements Transcriber trait
+    transcriber.rs   ← implements AsrEnginePort trait
 ```
 
 1. **Create** `asr/src/infra_openai/mod.rs` and `transcriber.rs`.
-2. **Implement** `Transcriber` for your new struct.
+2. **Implement** `AsrEnginePort` for your new struct.
 3. **Register** the module in `asr/src/lib.rs`: `pub mod infra_openai;`.
 4. **Wire** in `asr/src/main.rs`:
    ```rust
-   let adapter = OpenAiTranscriber::new(api_key);
-   let mut service = AsrService::new(Box::new(adapter));
+   let engine = OpenAiTranscriber::new(api_key);
+   // inject into use case as Box<dyn AsrEnginePort>
+   let use_case = TranscribeAudioUseCase::new(
+       config, model_resolver, Box::new(engine), pipeline_registry,
+   );
    ```
 5. No changes to `domain/`, `application/`, or `shared`.
+
+---
+
+## Feature gates
+
+Both `asr` and `tts` use Cargo feature gates for optional infrastructure:
+
+| Feature | ASR | TTS | Dependencies |
+|---|---|---|---|
+| `cli` | CLI subcommands (transcribe) | CLI entry point | `clap` |
+| `web` | Axum web server (serve) | Axum endpoints (stub) | `axum`, `tokio` |
+| `cuda` | GPU acceleration | GPU acceleration | backend-specific |
+
+Default features: `cli`, `web`, `cuda` (ASR); `cli`, `hub`, `cuda` (TTS).

@@ -3,15 +3,24 @@ name = "asr"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+default = ["cli", "web", "cuda"]
+cli = ["dep:clap"]
+web = ["dep:clap", "dep:axum", "dep:tokio"]
+cuda = ["aha/cuda"]
+
 [dependencies]
 shared = { path = "../shared_rs" }
-aha = { git = "https://github.com/jhqxxx/aha", features = ["cuda"] }
+aha = { git = "https://github.com/jhqxxx/aha" }
 aha_openai_dive = { version = "1.4", features = ["stream"] }
-clap = { version = "4", features = ["derive"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
+
+clap = { version = "4", features = ["derive"], optional = true }
+axum = { version = "0.8", features = ["multipart"], optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
 
 # Pin candle to 0.9.1 — aha's match on DType is not exhaustive for 0.9.2+
 candle-core = "=0.9.1"

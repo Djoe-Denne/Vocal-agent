@@ -54,9 +54,33 @@ cd tts && cargo build --release
 
 ```cmd
 cd asr
-cargo run -- audio.wav
-cargo run -- audio.wav --model-dir ./models/Qwen3-ASR-1.7b
-cargo run -- audio.wav --config asr_config.toml
+cargo run -- transcribe audio.wav
+cargo run -- transcribe audio.wav --language en
+cargo run -- transcribe audio.wav --output transcript.txt
+cargo run -- --model-dir ./models/Qwen3-ASR-1.7b transcribe audio.wav
+cargo run -- --config asr_config.toml transcribe audio.wav
+```
+
+### ASR — web API server
+
+```cmd
+cd asr
+cargo run -- serve
+cargo run -- serve --host 0.0.0.0 --port 3001
+```
+
+Once the server is running, send requests with `curl`:
+
+```cmd
+curl -X POST http://localhost:3001/transcribe -F "file=@audio.wav" -F "language=fr"
+curl http://localhost:3001/health
+```
+
+Or PowerShell:
+
+```powershell
+$form = @{ file = Get-Item audio.wav; language = "fr" }
+Invoke-RestMethod -Uri http://localhost:3001/transcribe -Method Post -Form $form
 ```
 
 ### TTS — synthesise speech
@@ -130,10 +154,20 @@ CLI flags override config-file values, which override built-in defaults.
 <summary>Example ASR config (<code>asr_config.toml</code>)</summary>
 
 ```toml
-[model]
+[defaults]
+language = "fr"
+
+[engine]
+device = "auto"
 model_dir = "./models/Qwen3-ASR-1.7b"
-language  = "fr"
+
+[pipeline]
+pre = []
+post = []
 ```
+
+Environment variables `ASR_DEVICE` and `ASR_MODEL_DIR` override the corresponding
+config values.
 
 </details>
 
