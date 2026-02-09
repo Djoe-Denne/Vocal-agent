@@ -1,0 +1,16 @@
+[server]
+host = "127.0.0.1"
+port = 3011
+
+[asr]
+base_url = "http://127.0.0.1:3001"
+timeout_ms = 30000
+
+[openclaw]
+enabled = true
+base_url = "http://127.0.0.1:18789"
+model = "ollama/qwen3-vl:8b"
+# Do not put secrets in this file in production.
+# Prefer OPENCLAW_TOKEN environment variable.
+token = "110b83dc4766b2532feba81f68ff7ed5ac3b6274aadf419c"
+timeout_ms = 30000

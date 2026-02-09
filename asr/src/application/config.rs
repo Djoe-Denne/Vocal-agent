@@ -29,10 +29,6 @@ pub struct AsrConfig {
     /// Pipeline stage lists.
     #[serde(default)]
     pub pipeline: PipelineConfig,
-
-    /// OpenClaw agent delivery settings.
-    #[serde(default)]
-    pub openclaw: OpenClawConfig,
 }
 
 impl Default for AsrConfig {
@@ -41,7 +37,6 @@ impl Default for AsrConfig {
             defaults: DefaultsConfig::default(),
             engine: EngineConfig::default(),
             pipeline: PipelineConfig::default(),
-            openclaw: OpenClawConfig::default(),
         }
     }
 }
@@ -125,45 +120,6 @@ impl Default for PipelineConfig {
 }
 
 // ---------------------------------------------------------------------------
-// OpenClawConfig
-// ---------------------------------------------------------------------------
-
-/// OpenClaw delivery settings (HTTP-based).
-#[derive(Debug, Clone, Deserialize)]
-pub struct OpenClawConfig {
-    /// Enable delivery to OpenClaw.
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// OpenClaw gateway base URL.
-    #[serde(default = "default_openclaw_base_url")]
-    pub base_url: String,
-
-    /// OpenClaw model id (provider/model-name).
-    #[serde(default)]
-    pub model: Option<String>,
-
-    /// OpenClaw gateway token (from env).
-    #[serde(default)]
-    pub token: Option<String>,
-}
-
-fn default_openclaw_base_url() -> String {
-    "http://127.0.0.1:18789".to_owned()
-}
-
-impl Default for OpenClawConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            base_url: default_openclaw_base_url(),
-            model: None,
-            token: None,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // ConfigService
 // ---------------------------------------------------------------------------
 
@@ -199,9 +155,6 @@ impl ConfigService {
         }
         if let Ok(model_dir) = std::env::var("ASR_MODEL_DIR") {
             config.engine.model_dir = PathBuf::from(model_dir);
-        }
-        if let Ok(token) = std::env::var("OPENCLAW_TOKEN") {
-            config.openclaw.token = Some(token);
         }
         config
     }

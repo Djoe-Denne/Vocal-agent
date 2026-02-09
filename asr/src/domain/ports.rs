@@ -67,17 +67,3 @@ pub trait PostProcessor: Send {
     fn process(&self, ctx: PostProcessorContext) -> anyhow::Result<PostProcessorContext>;
 }
 
-// ---------------------------------------------------------------------------
-// GAIAgentPort — outbound agent delivery
-// ---------------------------------------------------------------------------
-
-/// Abstract port for delivering transcription results to an external agent.
-///
-/// Kept transport-agnostic so adapters can implement CLI, HTTP, etc.
-pub trait GAIAgentPort: Send + Sync {
-    /// Send a transcription result using the post-processor context.
-    fn send_transcription(
-        &self,
-        ctx: &PostProcessorContext,
-    ) -> anyhow::Result<()>;
-}

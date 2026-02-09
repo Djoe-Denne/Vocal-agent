@@ -7,12 +7,13 @@ GPU-accelerated **Automatic Speech Recognition (ASR)** and **Text-to-Speech (TTS
 ```
 ├── shared_rs/      # Common crate: pipeline engine, domain primitives
 ├── asr/            # ASR crate (Qwen3-ASR via the `aha` candle backend)
-└── tts/            # TTS crate (Qwen3-TTS via `qwen3-tts-rs`, voice cloning)
+├── tts/            # TTS crate (Qwen3-TTS via `qwen3-tts-rs`, voice cloning)
+└── agent_service/  # Orchestrator web service (ASR HTTP -> OpenClaw HTTP)
 ```
 
-`asr` and `tts` are **independent Cargo projects** (no workspace) — each has its
-own `Cargo.lock` and dependency tree. This is required because `aha` needs
-candle 0.9.1 while `qwen3-tts` needs candle 0.9.2, and these are
+`asr`, `tts`, and `agent_service` are **independent Cargo projects** (no workspace)
+— each has its own `Cargo.lock` and dependency tree. This is required because
+`aha` needs candle 0.9.1 while `qwen3-tts` needs candle 0.9.2, and these are
 incompatible within a single Cargo resolution.
 
 Each crate follows a **hexagonal (ports & adapters) architecture**.
@@ -39,6 +40,7 @@ Each crate is built independently from its own directory:
 ```cmd
 cd asr && cargo build
 cd tts && cargo build
+cd agent_service && cargo build
 ```
 
 For optimised builds:
@@ -46,6 +48,7 @@ For optimised builds:
 ```cmd
 cd asr && cargo build --release
 cd tts && cargo build --release
+cd agent_service && cargo build --release
 ```
 
 ## Running
@@ -81,6 +84,37 @@ Or PowerShell:
 ```powershell
 $form = @{ file = Get-Item audio.wav; language = "fr" }
 Invoke-RestMethod -Uri http://localhost:3001/transcribe -Method Post -Form $form
+```
+
+### Agent Service — ASR -> OpenClaw orchestrator
+
+Start ASR first:
+
+```cmd
+cd asr
+cargo run -- serve --host 127.0.0.1 --port 3001
+```
+
+Then start the orchestrator:
+
+```cmd
+cd agent_service
+cargo run -- --config config.toml --host 127.0.0.1 --port 3010
+```
+
+Send audio to the orchestrator (`POST /process`), which will call ASR and then
+forward transcription text to OpenClaw:
+
+```cmd
+curl -X POST http://localhost:3010/process -F "file=@audio.wav" -F "language=fr"
+curl http://localhost:3010/health
+```
+
+Or PowerShell:
+
+```powershell
+$form = @{ file = Get-Item audio.wav; language = "fr" }
+Invoke-RestMethod -Uri http://localhost:3010/process -Method Post -Form $form
 ```
 
 ### TTS — synthesise speech
