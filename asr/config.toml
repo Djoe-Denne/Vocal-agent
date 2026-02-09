@@ -1,0 +1,25 @@
+[defaults]
+# Default language hint (e.g. "en", "fr", "ja").
+language = "en"
+
+[engine]
+# Compute device: "auto", "cpu", "cuda", "cuda:0", "metal".
+device = "auto"
+# Local model weights directory.
+model_dir = "./models/Qwen3-ASR-1.7b"
+
+[pipeline]
+# Ordered list of pre-processor stage names.
+pre = []
+# Ordered list of post-processor stage names.
+post = ["openclaw"]
+
+[openclaw]
+# Enable delivery to OpenClaw.
+enabled = true
+# OpenClaw gateway base URL.
+base_url = "http://127.0.0.1:18789"
+# OpenClaw model id (provider/model-name).
+model = "ollama/qwen3-vl:8b"
+# OpenClaw gateway token (set via env var).
+# export OPENCLAW_TOKEN="your-gateway-token"

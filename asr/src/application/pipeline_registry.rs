@@ -8,10 +8,12 @@ use std::collections::HashMap;
 use crate::domain::ports::{PostProcessor, PreProcessor};
 
 /// Builder function type for pre-processors.
-pub type PreProcessorBuilder = fn() -> anyhow::Result<Box<dyn PreProcessor>>;
+pub type PreProcessorBuilder =
+    Box<dyn Fn() -> anyhow::Result<Box<dyn PreProcessor>> + Send + Sync>;
 
 /// Builder function type for post-processors.
-pub type PostProcessorBuilder = fn() -> anyhow::Result<Box<dyn PostProcessor>>;
+pub type PostProcessorBuilder =
+    Box<dyn Fn() -> anyhow::Result<Box<dyn PostProcessor>> + Send + Sync>;
 
 /// Registry of named pre/post processor builders.
 ///
@@ -35,18 +37,18 @@ impl PipelineRegistry {
     pub fn register_pre(
         &mut self,
         name: impl Into<String>,
-        builder: PreProcessorBuilder,
+        builder: impl Fn() -> anyhow::Result<Box<dyn PreProcessor>> + Send + Sync + 'static,
     ) {
-        self.pre_builders.insert(name.into(), builder);
+        self.pre_builders.insert(name.into(), Box::new(builder));
     }
 
     /// Register a post-processor builder under the given name.
     pub fn register_post(
         &mut self,
         name: impl Into<String>,
-        builder: PostProcessorBuilder,
+        builder: impl Fn() -> anyhow::Result<Box<dyn PostProcessor>> + Send + Sync + 'static,
     ) {
-        self.post_builders.insert(name.into(), builder);
+        self.post_builders.insert(name.into(), Box::new(builder));
     }
 
     /// Build an ordered chain of pre-processors from stage names.

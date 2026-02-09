@@ -18,6 +18,7 @@ use asr::application::use_cases::TranscribeAudioUseCase;
 use asr::infra_cli::cli::{Args, Command};
 use asr::infra_aha::transcriber::AhaTranscriber;
 use asr::infra_local::provider::LocalModelProvider;
+use asr::infra_openclaw::post_processor::OpenClawPostProcessor;
 
 fn main() -> Result<()> {
     let args = Args::parse();
@@ -49,7 +50,15 @@ fn build_use_case(
     let local_provider = LocalModelProvider::new();
     let model_resolver = ModelResolver::new(Box::new(local_provider));
     let engine = AhaTranscriber::new(config.engine.clone());
-    let pipeline_registry = PipelineRegistry::new();
+    let mut pipeline_registry = PipelineRegistry::new();
+
+    if config.openclaw.enabled {
+        let openclaw_config = config.openclaw.clone();
+        pipeline_registry.register_post("openclaw", move || {
+            let processor = OpenClawPostProcessor::new(openclaw_config.clone())?;
+            Ok(Box::new(processor))
+        });
+    }
 
     TranscribeAudioUseCase::new(
         config,
