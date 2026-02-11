@@ -33,52 +33,45 @@ On Windows you **must** load the MSVC environment before building:
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 ```
 
-## Python TTS (optional) + FlashAttention 2 on Windows
+## Python TTS (optional) on Windows
 
 For some TTS models and prompts, the Python runtime (PyTorch stack) can produce
-better quality or more stable behavior than the Rust stack alone. A common cause
-is attention kernel differences. Installing **FlashAttention 2** can improve both:
+better quality or more stable behavior than the Rust stack alone.
 
-- quality consistency on long/complex prompts,
-- inference speed and memory efficiency on CUDA GPUs.
+The setup below was validated end-to-end with:
+- `torch==2.10.0+cu128`
+- `torchvision==0.25.0+cu128`
+- `torchaudio==2.10.0+cu128`
+- **without** `flash-attn`
 
 ### Why this is needed
 
 - PyTorch can use optimized attention kernels that are not always matched by
   other runtimes.
-- FlashAttention 2 improves numerical behavior and throughput for transformer
-  attention on GPU.
+- CUDA/PyTorch wheel mismatches can fail at import time with native DLL errors
+  (for example `WinError 193` on `cufft64_11.dll`).
 
-### Windows wheel source
-
-Use the Windows wheels from:
-- https://huggingface.co/ussoewwin/Flash-Attention-2_for_Windows/tree/main
-
-### Installation steps (Windows)
+### Installation steps (Windows, validated)
 
 1. Create/activate your Python environment.
-2. Install your target PyTorch build first (must match CUDA and Python ABI).
-3. Download the FlashAttention wheel matching your versions:
-   - Python ABI (`cp311`, `cp312`, `cp313`)
-   - Torch version in filename (for example `torch2.9.1`)
-   - CUDA tag in filename (for example `cu130`)
-4. Install the downloaded wheel with pip:
+2. Install CUDA 12.8 wheels:
 
 ```powershell
-pip install "C:\path\to\flash_attn-2.x.x+cu130torch2.9.1cxx11abiTRUE-cp312-cp312-win_amd64.whl"
+pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
-5. Verify installation:
+3. Verify:
 
 ```powershell
-python -c "import flash_attn; print('flash_attn OK')"
+python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
 ```
 
-### Version matching notes
+Expected output includes `2.10.0+cu128`, `12.8`, and `True`.
 
-- Wheel/PyTorch/CUDA/Python versions must match exactly.
-- If versions do not match, import/runtime errors are expected.
-- Prefer testing in a fresh virtual environment.
+### FlashAttention note
+
+`flash-attn` is optional. If you install it, the wheel must match Python ABI,
+Torch version, and CUDA version exactly.
 
 ## Building
 
@@ -133,7 +126,7 @@ $form = @{ file = Get-Item audio.wav; language = "fr" }
 Invoke-RestMethod -Uri http://localhost:3001/transcribe -Method Post -Form $form
 ```
 
-### Agent Service — ASR -> OpenClaw orchestrator
+### Agent Service — ASR -> OpenClaw (+ optional TTS) orchestrator
 
 Start ASR first:
 
@@ -146,23 +139,75 @@ Then start the orchestrator:
 
 ```cmd
 cd agent_service
-cargo run -- --config config.toml --host 127.0.0.1 --port 3010
+cargo run -- --config config.toml --host 127.0.0.1 --port 3011
 ```
 
-Send audio to the orchestrator (`POST /process`), which will call ASR and then
-forward transcription text to OpenClaw:
+Send audio to the orchestrator (`POST /process`), which calls ASR, then OpenClaw,
+then (if enabled) TTS:
 
 ```cmd
-curl -X POST http://localhost:3010/process -F "file=@audio.wav" -F "language=fr"
-curl http://localhost:3010/health
+curl -X POST http://localhost:3011/process -F "file=@audio.wav" -F "language=fr" --output out.wav
+curl http://localhost:3011/health
 ```
 
 Or PowerShell:
 
 ```powershell
 $form = @{ file = Get-Item audio.wav; language = "fr" }
-Invoke-RestMethod -Uri http://localhost:3010/process -Method Post -Form $form
+Invoke-WebRequest -Uri http://localhost:3011/process -Method Post -Form $form -OutFile out.wav
 ```
+
+When `[tts].enabled = true` in `agent_service/config.toml`, `POST /process`
+returns raw `audio/wav` bytes (not JSON). Text metadata is returned in headers:
+- `x-transcription`
+- `x-agent-response`
+- `x-timing-asr-ms`, `x-timing-agent-ms`, `x-timing-tts-ms`, `x-timing-total-ms`
+- `x-warnings`
+
+If the response is non-200, the body is JSON error text. Do not treat that body
+as WAV.
+
+### End-to-end chain used in practice (ASR + OpenClaw + tts_python)
+
+This is the exact flow used during integration debugging:
+
+1. Start `tts_python` (already-configured venv):
+
+```powershell
+.\tts_python\.venv\Scripts\python.exe -m tts_python --host 127.0.0.1 --port 3002
+```
+
+2. Start ASR:
+
+```powershell
+cd asr
+cargo run -- serve --host 127.0.0.1 --port 3001
+```
+
+3. Start agent service:
+
+```powershell
+cd agent_service
+cargo run -- --config config.toml --host 127.0.0.1 --port 3011
+```
+
+4. Call the channel:
+
+```powershell
+curl.exe -sS -D headers.txt -o response.wav -F "file=@Enregistrement.wav" http://127.0.0.1:3011/process
+```
+
+5. Validate result:
+- `headers.txt` should contain `HTTP/1.1 200 OK` and `content-type: audio/wav`
+- `response.wav` should be a valid RIFF/WAVE file
+
+Notes:
+- Large uploads are supported (body limit raised to 32 MiB in both `agent_service`
+  and `asr`).
+- For slower GPUs/models, increase `[tts].timeout_ms` in
+  `agent_service/config.toml` (for example `120000`).
+- OpenClaw must be reachable at `http://127.0.0.1:18789` with a valid
+  `openclaw.model` and `openclaw.token`.
 
 ### TTS — synthesise speech
 
