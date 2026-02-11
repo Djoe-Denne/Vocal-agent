@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use agent_service::application::config::{AgentServiceConfig, ConfigService};
 use agent_service::application::use_cases::ProcessAudioUseCase;
-use agent_service::domain::ports::ConversationalAgentPort;
+use agent_service::domain::ports::{ConversationalAgentPort, TtsPort};
 use agent_service::infra_asr_http::client::AsrHttpClient;
 use agent_service::infra_openclaw_http::client::OpenClawHttpClient;
+use agent_service::infra_tts_http::client::TtsHttpClient;
 use agent_service::infra_web::api;
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -51,7 +52,17 @@ fn build_use_case(config: &AgentServiceConfig) -> anyhow::Result<ProcessAudioUse
             None
         };
 
-    Ok(ProcessAudioUseCase::new(Box::new(asr_client), conversational_agent))
+    let tts: Option<Box<dyn TtsPort>> = if config.tts.enabled {
+        Some(Box::new(TtsHttpClient::from_config(&config.tts)?))
+    } else {
+        None
+    };
+
+    Ok(ProcessAudioUseCase::new(
+        Box::new(asr_client),
+        conversational_agent,
+        tts,
+    ))
 }
 
 fn run_serve(config: AgentServiceConfig) -> Result<()> {
@@ -60,6 +71,10 @@ fn run_serve(config: AgentServiceConfig) -> Result<()> {
     println!("=== Agent Service — Web API ===");
     println!("ASR base URL     : {}", config.asr.base_url);
     println!("OpenClaw enabled : {}", config.openclaw.enabled);
+    println!("TTS enabled      : {}", config.tts.enabled);
+    if config.tts.enabled {
+        println!("TTS base URL     : {}", config.tts.base_url);
+    }
     println!("Listening        : http://{bind_addr}");
     println!();
 

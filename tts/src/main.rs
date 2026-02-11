@@ -154,9 +154,11 @@ fn run_serve(
     println!("Listening : http://{bind_addr}");
     println!();
 
+    let voices_dir = config.engine.voices_dir.clone();
     let use_case = build_use_case(config);
     let state = Arc::new(api::AppState {
         use_case: std::sync::Mutex::new(use_case),
+        voices_dir,
     });
 
     let app = api::router(state);
@@ -166,7 +168,8 @@ fn run_serve(
         let listener = tokio::net::TcpListener::bind(&bind_addr).await?;
         println!("Server started. Endpoints:");
         println!("  GET  /health");
-        println!("  POST /synthesize");
+        println!("  POST /v1/audio/speech");
+        println!("  GET  /v1/audio/voices");
         println!();
         axum::serve(listener, app).await?;
         Ok::<(), anyhow::Error>(())

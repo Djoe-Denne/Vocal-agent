@@ -1,6 +1,6 @@
 # Arsouille-agent
 
-GPU-accelerated **Automatic Speech Recognition (ASR)** and **Text-to-Speech (TTS)** in Rust — designed to replace the equivalent Python stack (`ptt`, `tts_server`, `shared`).
+GPU-accelerated **Automatic Speech Recognition (ASR)** and **Text-to-Speech (TTS)** with Rust services and an optional Python TTS path for quality/performance experiments.
 
 ## Project layout
 
@@ -32,6 +32,53 @@ On Windows you **must** load the MSVC environment before building:
 ```cmd
 call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 ```
+
+## Python TTS (optional) + FlashAttention 2 on Windows
+
+For some TTS models and prompts, the Python runtime (PyTorch stack) can produce
+better quality or more stable behavior than the Rust stack alone. A common cause
+is attention kernel differences. Installing **FlashAttention 2** can improve both:
+
+- quality consistency on long/complex prompts,
+- inference speed and memory efficiency on CUDA GPUs.
+
+### Why this is needed
+
+- PyTorch can use optimized attention kernels that are not always matched by
+  other runtimes.
+- FlashAttention 2 improves numerical behavior and throughput for transformer
+  attention on GPU.
+
+### Windows wheel source
+
+Use the Windows wheels from:
+- https://huggingface.co/ussoewwin/Flash-Attention-2_for_Windows/tree/main
+
+### Installation steps (Windows)
+
+1. Create/activate your Python environment.
+2. Install your target PyTorch build first (must match CUDA and Python ABI).
+3. Download the FlashAttention wheel matching your versions:
+   - Python ABI (`cp311`, `cp312`, `cp313`)
+   - Torch version in filename (for example `torch2.9.1`)
+   - CUDA tag in filename (for example `cu130`)
+4. Install the downloaded wheel with pip:
+
+```powershell
+pip install "C:\path\to\flash_attn-2.x.x+cu130torch2.9.1cxx11abiTRUE-cp312-cp312-win_amd64.whl"
+```
+
+5. Verify installation:
+
+```powershell
+python -c "import flash_attn; print('flash_attn OK')"
+```
+
+### Version matching notes
+
+- Wheel/PyTorch/CUDA/Python versions must match exactly.
+- If versions do not match, import/runtime errors are expected.
+- Prefer testing in a fresh virtual environment.
 
 ## Building
 
@@ -145,21 +192,26 @@ cargo run -- serve --host 0.0.0.0 --port 3002
 Once the server is running, send requests with `curl`:
 
 ```cmd
-curl -X POST http://localhost:3000/synthesize -H "Content-Type: application/json" ^
-  -d "{\"text\": \"Bonjour le monde\", \"voice\": \"ryan\", \"language\": \"french\"}" ^
+curl -X POST http://localhost:3000/v1/audio/speech -H "Content-Type: application/json" ^
+  -d "{\"input\": \"Bonjour le monde\", \"voice_preset\": \"Ryan\"}" ^
   --output output.wav
+curl http://localhost:3000/v1/audio/voices
 curl http://localhost:3000/health
 ```
 
 Or PowerShell:
 
 ```powershell
-$body = @{ text = "Bonjour le monde"; voice = "ryan"; language = "french" } | ConvertTo-Json
-Invoke-RestMethod -Uri http://localhost:3000/synthesize -Method Post -ContentType "application/json" -Body $body -OutFile output.wav
+$body = @{ input = "Bonjour le monde"; voice_preset = "Ryan" } | ConvertTo-Json
+Invoke-RestMethod -Uri http://localhost:3000/v1/audio/speech -Method Post -ContentType "application/json" -Body $body -OutFile output.wav
 ```
 
-The `POST /synthesize` endpoint returns WAV audio directly. Synthesis metadata
-(timings, warnings) is available in the `X-TTS-Metadata` response header as JSON.
+The `POST /v1/audio/speech` endpoint returns WAV audio directly and accepts:
+- `input` (required)
+- `voice_sample` (optional, directory under `tts/voices/`)
+- `voice_preset` (optional, built-in speaker)
+- `guidance` (optional, voice guidance text)
+- `pipeline` (optional; currently rejected by Rust service)
 
 #### Voice cloning with voice profiles
 
@@ -287,10 +339,10 @@ Custom cloned voices can be added by creating a directory in `tts/voices/`
 These two candle versions are **mutually incompatible**, which is why `asr` and
 `tts` must be compiled as separate Cargo projects.
 
-## Python stack (removed)
+## Python stack status
 
-The original Python implementations (`ptt/`, `tts_server/`, `shared/`) have
-been replaced by the Rust crates and removed from the repository.
+The Rust crates are the primary implementation. A Python TTS variant is also
+maintained for quality/performance comparison scenarios.
 
 ## License
 

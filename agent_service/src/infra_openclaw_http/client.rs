@@ -44,6 +44,13 @@ impl ConversationalAgentPort for OpenClawHttpClient {
             "{}/v1/chat/completions",
             self.base_url.trim_end_matches('/')
         );
+        eprintln!(
+            "[agent_service][openclaw_http] request endpoint={} model={} input_len={} input_preview={}",
+            endpoint,
+            self.model,
+            text.len(),
+            preview_text(text, 120)
+        );
 
         let payload = json!({
             "model": self.model,
@@ -60,6 +67,10 @@ impl ConversationalAgentPort for OpenClawHttpClient {
             .json(&payload)
             .send()
             .context("Failed to call OpenClaw /v1/chat/completions endpoint")?;
+        eprintln!(
+            "[agent_service][openclaw_http] response status={}",
+            response.status()
+        );
 
         if !response.status().is_success() {
             let status = response.status();
@@ -76,6 +87,11 @@ impl ConversationalAgentPort for OpenClawHttpClient {
             .context("Failed to parse OpenClaw JSON response")?;
 
         let text = extract_message_content(&body);
+        eprintln!(
+            "[agent_service][openclaw_http] parsed response_len={} response_preview={}",
+            text.as_ref().map(|t| t.len()).unwrap_or(0),
+            text.as_deref().map(|t| preview_text(t, 120)).unwrap_or_else(|| "<none>".to_owned())
+        );
         Ok(AgentResponse { text })
     }
 }
@@ -106,4 +122,18 @@ fn extract_message_content(body: &Value) -> Option<String> {
     }
 
     None
+}
+
+fn preview_text(text: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    let mut count = 0usize;
+    for ch in text.chars() {
+        if count >= max_chars {
+            out.push_str("...");
+            break;
+        }
+        out.push(ch);
+        count += 1;
+    }
+    out
 }

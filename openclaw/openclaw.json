@@ -62,8 +62,14 @@
     }
   },
   "plugins": {
+    "load": {
+      "paths": ["./plugins/tts-trigger"]
+    },
     "entries": {
       "whatsapp": {
+        "enabled": true
+      },
+      "tts-trigger": {
         "enabled": true
       }
     }

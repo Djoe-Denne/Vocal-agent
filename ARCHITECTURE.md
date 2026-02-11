@@ -1,7 +1,7 @@
 # Architecture
 
 This document describes the hexagonal (ports & adapters) architecture used across
-the Rust crates. The design mirrors the Python `ptt`, `tts_server`, and
+the Rust crates. The design mirrors the Python `ptt`, `tts_python`, and
 `shared` modules they replace.
 
 ---
@@ -344,10 +344,10 @@ profile in `voices/` and dispatch to `engine_clone`.
 | `ptt/domain/models.py` | `asr/src/domain/models.rs` | `TranscriptionRequest`, `TranscriptionResult`, `ResolvedModel` |
 | `ptt/application/ptt_app.py` | `asr/src/application/use_cases.rs` | `TranscribeAudioUseCase` |
 | `ptt/infra_huggingface/transcriber.py` | `asr/src/infra_aha/transcriber.rs` | `AhaTranscriber` (different backend) |
-| `tts_server/domain/ports.py` | `tts/src/domain/ports.rs` | `TtsEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` |
-| `tts_server/domain/models.py` | `tts/src/domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel` |
-| `tts_server/application/tts_service.py` | `tts/src/application/use_cases.rs` | `SynthesizeSpeechUseCase` |
-| `tts_server/infra_pytorch/model.py` | `tts/src/infra_qwen3/engine.rs` | `Qwen3TtsEngine` (candle backend) |
+| `tts_python/domain/ports.py` | `tts/src/domain/ports.rs` | `TtsEnginePort`, `ModelProviderPort`, `PreProcessor`, `PostProcessor` |
+| `tts_python/domain/models.py` | `tts/src/domain/models.rs` | `SynthesisRequest`, `SynthesisResult`, `ResolvedModel` |
+| `tts_python/application/tts_service.py` | `tts/src/application/use_cases.rs` | `SynthesizeSpeechUseCase` |
+| `tts_python/infra_pytorch/model.py` | `tts/src/infra_qwen3/engine.rs` | `Qwen3TtsEngine` (candle backend) |
 
 ---
 

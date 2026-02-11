@@ -28,3 +28,5 @@ toml = "0.8"
 clap = { version = "4", features = ["derive"], optional = true }
 axum = { version = "0.8", features = ["json"], optional = true }
 tokio = { version = "1", features = ["full"], optional = true }
+rand = { version = "0.10.0", features = ["std", "std_rng"] }
+

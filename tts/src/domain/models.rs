@@ -110,13 +110,13 @@ pub struct SynthesisOptions {
 }
 
 fn default_temperature() -> f64 {
-    0.7
+    1.3
 }
 fn default_top_k() -> usize {
-    50
+    150
 }
 fn default_top_p() -> f64 {
-    0.9
+    1.5
 }
 fn default_repetition_penalty() -> f64 {
     1.05
@@ -132,7 +132,7 @@ impl Default for SynthesisOptions {
             top_k: default_top_k(),
             top_p: default_top_p(),
             repetition_penalty: default_repetition_penalty(),
-            seed: Some(42),
+            seed: Some(54445),
             max_frames: default_max_frames(),
         }
     }

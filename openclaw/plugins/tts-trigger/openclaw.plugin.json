@@ -1,0 +1,21 @@
+{
+  "id": "tts-trigger",
+  "name": "TTS Trigger",
+  "description": "Triggers Text-to-Speech when the agent produces a final user-visible response via the speak tool.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "description": "TTS server base URL (e.g. http://127.0.0.1:3000). Overridden by TTS_BASE_URL env."
+      }
+    }
+  },
+  "uiHints": {
+    "baseUrl": {
+      "label": "TTS base URL",
+      "placeholder": "http://127.0.0.1:3000"
+    }
+  }
+}

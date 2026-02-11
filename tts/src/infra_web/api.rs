@@ -1,11 +1,14 @@
 //! Web API adapter for TTS.
 //!
-//! Axum-based REST endpoints for speech synthesis.
+//! Axum-based REST endpoints aligned with the Python service.
 //!
 //! Endpoints:
-//! - `POST /synthesize` — JSON request body, returns WAV audio binary
-//! - `GET  /health`     — health check
+//! - `POST /v1/audio/speech` — OpenAI-style request body, returns WAV audio
+//! - `GET  /v1/audio/voices` — speakers/languages and voice-sample layout
+//! - `GET  /health`          — health check
 
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use axum::extract::State;
@@ -17,7 +20,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::application::use_cases::SynthesizeSpeechUseCase;
 use crate::domain::models::SynthesisOptions;
-use crate::domain::value_objects::{Language, VoiceId};
+use crate::domain::value_objects::VoiceId;
 
 // ---------------------------------------------------------------------------
 // Shared application state
@@ -29,6 +32,7 @@ use crate::domain::value_objects::{Language, VoiceId};
 /// `spawn_blocking` which requires `Send + 'static`.
 pub struct AppState {
     pub use_case: Mutex<SynthesizeSpeechUseCase>,
+    pub voices_dir: PathBuf,
 }
 
 // ---------------------------------------------------------------------------
@@ -36,50 +40,37 @@ pub struct AppState {
 // ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
-struct SynthesizeRequest {
+struct SpeechRequest {
     /// Text to synthesise.
-    text: String,
-    /// Voice to use (preset name or custom identifier).
-    #[serde(default = "default_voice")]
-    voice: String,
-    /// Target language.
-    #[serde(default = "default_language")]
-    language: String,
-    /// Voice design instruction text (VoiceDesign models only).
-    instruct: Option<String>,
-    /// Synthesis options.
-    #[serde(default)]
-    options: Option<SynthesisOptions>,
-}
-
-fn default_voice() -> String {
-    "ryan".to_owned()
-}
-
-fn default_language() -> String {
-    "english".to_owned()
-}
-
-#[derive(Serialize)]
-struct SynthesizeMetadata {
-    sample_rate: u32,
-    duration_secs: f64,
-    timings: TimingsResponse,
-    warnings: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct TimingsResponse {
-    model_load_ms: f64,
-    preprocess_ms: f64,
-    inference_ms: f64,
-    postprocess_ms: f64,
-    total_ms: f64,
+    input: String,
+    /// Voice sample ID under `voices/` (e.g. "justamon").
+    voice_sample: Option<String>,
+    /// Built-in speaker preset (e.g. "Serena", "Vivian").
+    voice_preset: Option<String>,
+    /// Guidance text for voice output.
+    guidance: Option<String>,
+    /// Named pipeline override.
+    pipeline: Option<String>,
 }
 
 #[derive(Serialize)]
 struct ErrorResponse {
-    error: String,
+    detail: String,
+}
+
+#[derive(Serialize)]
+struct VoiceSampleLayout {
+    example: String,
+    audio: Vec<String>,
+    text: String,
+}
+
+#[derive(Serialize)]
+struct VoicesResponse {
+    speakers: Vec<String>,
+    languages: Vec<String>,
+    voice_samples_dir: String,
+    voice_sample_layout: VoiceSampleLayout,
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +81,8 @@ struct ErrorResponse {
 pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))
-        .route("/synthesize", post(synthesize))
+        .route("/v1/audio/speech", post(create_speech))
+        .route("/v1/audio/voices", get(list_voices))
         .with_state(state)
 }
 
@@ -102,31 +94,69 @@ async fn health() -> impl IntoResponse {
     Json(serde_json::json!({ "status": "ok" }))
 }
 
-/// `POST /synthesize`
-///
-/// Accepts a JSON body with `text`, `voice`, `language`, optional `instruct`
-/// and `options`. Returns WAV audio with metadata in response headers.
-async fn synthesize(
+/// `POST /v1/audio/speech`
+async fn create_speech(
     State(state): State<Arc<AppState>>,
-    Json(body): Json<SynthesizeRequest>,
+    Json(body): Json<SpeechRequest>,
 ) -> Result<impl IntoResponse, (StatusCode, Json<ErrorResponse>)> {
-    let voice: VoiceId = body.voice.parse().map_err(|e: anyhow::Error| {
-        (
+    if body.input.trim().is_empty() {
+        return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: format!("Invalid voice: {e}"),
+                detail: "input must not be empty.".to_owned(),
             }),
-        )
-    })?;
+        ));
+    }
 
-    let language: Language = body.language.parse().map_err(|e: anyhow::Error| {
-        (
+    if body.pipeline.is_some() {
+        return Err((
             StatusCode::BAD_REQUEST,
             Json(ErrorResponse {
-                error: format!("Invalid language: {e}"),
+                detail: "pipeline overrides are not supported by this Rust service.".to_owned(),
             }),
-        )
-    })?;
+        ));
+    }
+
+    if body.voice_sample.is_none() && body.voice_preset.is_none() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(ErrorResponse {
+                detail: "Either voice_sample or voice_preset must be provided.".to_owned(),
+            }),
+        ));
+    }
+
+    let mut voice: Option<VoiceId> = None;
+    let mut ref_audio_path: Option<PathBuf> = None;
+    let mut ref_text: Option<String> = None;
+
+    if let Some(sample_id) = body.voice_sample.clone() {
+        let (audio_path, sample_text) = resolve_voice_sample(&state.voices_dir, &sample_id).map_err(|e| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(ErrorResponse {
+                    detail: e.to_string(),
+                }),
+            )
+        })?;
+        voice = Some(VoiceId::Custom(sample_id));
+        ref_audio_path = Some(audio_path);
+        ref_text = sample_text;
+    }
+
+    if let Some(voice_preset) = body.voice_preset {
+        if voice.is_none() {
+            let parsed_voice: VoiceId = voice_preset.parse().map_err(|e: anyhow::Error| {
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(ErrorResponse {
+                        detail: format!("Invalid voice_preset: {e}"),
+                    }),
+                )
+            })?;
+            voice = Some(parsed_voice);
+        }
+    }
 
     // Run synthesis in a blocking task (the TTS engine is synchronous).
     let result = tokio::task::spawn_blocking(move || {
@@ -136,14 +166,14 @@ async fn synthesize(
             .map_err(|e| anyhow::anyhow!("Lock poisoned: {e}"))?;
 
         let request = use_case.build_request(
-            body.text,
+            body.input,
             None, // model_ref from config
-            Some(voice),
-            Some(language),
-            body.options,
-            body.instruct,
-            None, // ref_audio_path
-            None, // ref_text
+            Some(voice.unwrap_or_default()),
+            None, // language from config default
+            Some(SynthesisOptions::default()),
+            body.guidance,
+            ref_audio_path,
+            ref_text,
         );
 
         use_case.execute(request)
@@ -153,7 +183,7 @@ async fn synthesize(
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("Task join error: {e}"),
+                detail: format!("Task join error: {e}"),
             }),
         )
     })?
@@ -161,51 +191,100 @@ async fn synthesize(
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("Synthesis failed: {e}"),
+                detail: format!("Synthesis failed: {e}"),
             }),
         )
     })?;
 
     // Encode audio as WAV in memory.
     let sample_rate = result.sample_rate.0;
-    let num_samples = result.audio_samples.len();
-    let duration_secs = num_samples as f64 / sample_rate as f64;
 
     let wav_bytes = encode_wav(&result.audio_samples, sample_rate).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
-                error: format!("WAV encoding failed: {e}"),
+                detail: format!("WAV encoding failed: {e}"),
             }),
         )
     })?;
 
-    // Build metadata JSON for the header.
-    let metadata = SynthesizeMetadata {
-        sample_rate,
-        duration_secs,
-        timings: TimingsResponse {
-            model_load_ms: result.timings.model_load_ms,
-            preprocess_ms: result.timings.preprocess_ms,
-            inference_ms: result.timings.inference_ms,
-            postprocess_ms: result.timings.postprocess_ms,
-            total_ms: result.timings.total_ms,
-        },
-        warnings: result.warnings,
-    };
-
-    let metadata_json = serde_json::to_string(&metadata).unwrap_or_default();
-
-    let metadata_header = header::HeaderValue::from_str(&metadata_json)
-        .unwrap_or_else(|_| header::HeaderValue::from_static("{}"));
-
     Ok((
-        [
-            (header::CONTENT_TYPE, header::HeaderValue::from_static("audio/wav")),
-            (header::HeaderName::from_static("x-tts-metadata"), metadata_header),
-        ],
+        [(header::CONTENT_TYPE, header::HeaderValue::from_static("audio/wav"))],
         wav_bytes,
     ))
+}
+
+/// `GET /v1/audio/voices`
+async fn list_voices(State(state): State<Arc<AppState>>) -> impl IntoResponse {
+    Json(VoicesResponse {
+        speakers: vec![
+            "Serena".to_owned(),
+            "Vivian".to_owned(),
+            "UncleFu".to_owned(),
+            "Ryan".to_owned(),
+            "Aiden".to_owned(),
+            "OnoAnna".to_owned(),
+            "Sohee".to_owned(),
+            "Eric".to_owned(),
+            "Dylan".to_owned(),
+        ],
+        languages: vec![
+            "english".to_owned(),
+            "chinese".to_owned(),
+            "japanese".to_owned(),
+            "korean".to_owned(),
+            "german".to_owned(),
+            "french".to_owned(),
+            "russian".to_owned(),
+            "portuguese".to_owned(),
+            "spanish".to_owned(),
+            "italian".to_owned(),
+        ],
+        voice_samples_dir: state.voices_dir.to_string_lossy().to_string(),
+        voice_sample_layout: VoiceSampleLayout {
+            example: "voices/my_voice/".to_owned(),
+            audio: vec![
+                "audio.wav".to_owned(),
+                "audio.flac".to_owned(),
+                "audio.ogg".to_owned(),
+                "audio.mp3".to_owned(),
+            ],
+            text: "text.txt (optional)".to_owned(),
+        },
+    })
+}
+
+fn resolve_voice_sample(voices_dir: &Path, sample_id: &str) -> anyhow::Result<(PathBuf, Option<String>)> {
+    let sample_dir = voices_dir.join(sample_id);
+    if !sample_dir.exists() {
+        anyhow::bail!(
+            "Voice sample '{}' not found in {}.",
+            sample_id,
+            voices_dir.display()
+        );
+    }
+
+    let audio_candidates = ["audio.wav", "audio.flac", "audio.ogg", "audio.mp3"];
+    let audio_path = audio_candidates
+        .iter()
+        .map(|name| sample_dir.join(name))
+        .find(|candidate| candidate.exists())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Voice sample '{}' is missing audio.wav (or flac/ogg/mp3).",
+                sample_id
+            )
+        })?;
+
+    let text_path = sample_dir.join("text.txt");
+    let text_value = if text_path.exists() {
+        let raw = fs::read_to_string(text_path)?;
+        Some(raw.trim().to_owned())
+    } else {
+        None
+    };
+
+    Ok((audio_path, text_value))
 }
 
 // ---------------------------------------------------------------------------

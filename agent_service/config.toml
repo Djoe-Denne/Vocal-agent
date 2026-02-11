@@ -14,3 +14,10 @@ model = "ollama/qwen3-vl:8b"
 # Prefer OPENCLAW_TOKEN environment variable.
 token = "110b83dc4766b2532feba81f68ff7ed5ac3b6274aadf419c"
 timeout_ms = 30000
+
+[tts]
+enabled = true
+base_url = "http://127.0.0.1:3002"
+timeout_ms = 120000
+# voice_preset = "some_preset"
+voice_sample = "justamon"

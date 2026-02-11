@@ -11,6 +11,8 @@ pub struct AgentServiceConfig {
     pub asr: AsrClientConfig,
     #[serde(default)]
     pub openclaw: OpenClawClientConfig,
+    #[serde(default)]
+    pub tts: TtsClientConfig,
 }
 
 impl Default for AgentServiceConfig {
@@ -19,6 +21,7 @@ impl Default for AgentServiceConfig {
             server: ServerConfig::default(),
             asr: AsrClientConfig::default(),
             openclaw: OpenClawClientConfig::default(),
+            tts: TtsClientConfig::default(),
         }
     }
 }
@@ -119,6 +122,46 @@ impl Default for OpenClawClientConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TtsClientConfig {
+    #[serde(default = "default_tts_enabled")]
+    pub enabled: bool,
+    #[serde(default = "default_tts_base_url")]
+    pub base_url: String,
+    #[serde(default = "default_timeout_ms")]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub voice_preset: Option<String>,
+    #[serde(default)]
+    pub voice_sample: Option<String>,
+}
+
+fn default_tts_enabled() -> bool {
+    false
+}
+
+fn default_tts_base_url() -> String {
+    "http://127.0.0.1:3002".to_owned()
+}
+
+impl TtsClientConfig {
+    pub fn timeout(&self) -> Duration {
+        Duration::from_millis(self.timeout_ms)
+    }
+}
+
+impl Default for TtsClientConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_tts_enabled(),
+            base_url: default_tts_base_url(),
+            timeout_ms: default_timeout_ms(),
+            voice_preset: None,
+            voice_sample: None,
+        }
+    }
+}
+
 pub struct ConfigService;
 
 impl ConfigService {
@@ -157,6 +200,15 @@ impl ConfigService {
         }
         if let Ok(token) = std::env::var("OPENCLAW_TOKEN") {
             config.openclaw.token = Some(token);
+        }
+        if let Ok(base_url) = std::env::var("TTS_BASE_URL") {
+            config.tts.base_url = base_url;
+        }
+        if let Ok(voice_preset) = std::env::var("TTS_VOICE_PRESET") {
+            config.tts.voice_preset = Some(voice_preset);
+        }
+        if let Ok(voice_sample) = std::env::var("TTS_VOICE_SAMPLE") {
+            config.tts.voice_sample = Some(voice_sample);
         }
         config
     }

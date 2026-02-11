@@ -18,9 +18,21 @@ pub struct AgentResponse {
 }
 
 #[derive(Debug, Clone)]
+pub struct TtsSynthesizeRequest {
+    pub text: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct TtsSynthesis {
+    pub audio_data: Vec<u8>,
+    pub content_type: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct ProcessTiming {
     pub asr_ms: f64,
     pub agent_ms: f64,
+    pub tts_ms: f64,
     pub total_ms: f64,
 }
 
@@ -28,6 +40,7 @@ pub struct ProcessTiming {
 pub struct ProcessResult {
     pub transcription: String,
     pub agent_response: Option<String>,
+    pub audio: Option<TtsSynthesis>,
     pub warnings: Vec<String>,
     pub timings: ProcessTiming,
 }

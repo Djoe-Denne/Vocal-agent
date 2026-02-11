@@ -8,7 +8,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use axum::extract::{Multipart, State};
+use axum::extract::{DefaultBodyLimit, Multipart, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
@@ -64,6 +64,7 @@ pub fn router(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/transcribe", post(transcribe))
+        .layer(DefaultBodyLimit::max(32 * 1024 * 1024))
         .with_state(state)
 }
 

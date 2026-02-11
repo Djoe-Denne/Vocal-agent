@@ -39,6 +39,12 @@ impl AsrPort for AsrHttpClient {
             "{}/transcribe",
             self.base_url.trim_end_matches('/')
         );
+        eprintln!(
+            "[agent_service][asr_http] request endpoint={} audio_path={} language={:?}",
+            endpoint,
+            request.audio_path.display(),
+            request.language
+        );
 
         let file_name = request
             .audio_path
@@ -67,6 +73,10 @@ impl AsrPort for AsrHttpClient {
             .multipart(form)
             .send()
             .context("Failed to call ASR /transcribe endpoint")?;
+        eprintln!(
+            "[agent_service][asr_http] response status={}",
+            response.status()
+        );
 
         if !response.status().is_success() {
             let status = response.status();
@@ -81,6 +91,11 @@ impl AsrPort for AsrHttpClient {
         let body: AsrResponse = response
             .json()
             .context("Failed to parse ASR /transcribe JSON response")?;
+        eprintln!(
+            "[agent_service][asr_http] parsed text_len={} warnings={}",
+            body.text.len(),
+            body.warnings.len()
+        );
 
         Ok(AsrTranscription {
             text: body.text,

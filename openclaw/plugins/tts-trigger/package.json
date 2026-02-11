@@ -1,0 +1,9 @@
+{
+  "name": "tts-trigger",
+  "version": "0.1.0",
+  "description": "OpenClaw plugin: trigger TTS via the speak tool when the agent produces a final answer.",
+  "private": true,
+  "openclaw": {
+    "extensions": ["./index.ts"]
+  }
+}

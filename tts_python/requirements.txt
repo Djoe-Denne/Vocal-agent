@@ -1,0 +1,14 @@
+# Qwen3 TTS Server Dependencies
+
+# Qwen3 TTS
+qwen-tts>=0.1.1
+transformers==4.57.3
+accelerate>=0.24.0
+
+# Audio encoding
+numpy>=1.24.0
+soundfile>=0.12.1
+
+# API server
+fastapi>=0.110.0
+uvicorn>=0.24.0
