@@ -91,5 +91,5 @@ target/
 # TTS - Voice samples and cached models
 tts-test.ps1
 tts/models/
-tts/voices/
+tts_python/voices/
 asr/models/
