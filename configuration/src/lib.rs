@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use rustycog_config::{
-    load_config_fresh, ConfigError, ConfigLoader, DatabaseConfig, HasDbConfig, HasLoggingConfig,
-    HasQueueConfig, HasServerConfig, LoggingConfig, QueueConfig, ServerConfig,
+    load_config_fresh, ConfigError, ConfigLoader, HasLoggingConfig, HasQueueConfig,
+    HasServerConfig, LoggingConfig, QueueConfig, ServerConfig,
 };
 
 pub use rustycog_logger::setup_logging;
@@ -16,8 +16,6 @@ pub struct AsrConfig {
     pub server: ServerConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
-    #[serde(default)]
-    pub database: DatabaseConfig,
     #[serde(default)]
     pub queue: QueueConfig,
     #[serde(default)]
@@ -150,7 +148,6 @@ impl Default for AsrConfig {
         Self {
             server: ServerConfig::default(),
             logging: LoggingConfig::default(),
-            database: DatabaseConfig::default(),
             queue: QueueConfig::default(),
             service: ServiceConfig::default(),
         }
@@ -256,16 +253,6 @@ impl HasLoggingConfig for AsrConfig {
 
     fn set_logging_config(&mut self, config: LoggingConfig) {
         self.logging = config;
-    }
-}
-
-impl HasDbConfig for AsrConfig {
-    fn db_config(&self) -> &DatabaseConfig {
-        &self.database
-    }
-
-    fn set_db_config(&mut self, config: DatabaseConfig) {
-        self.database = config;
     }
 }
 

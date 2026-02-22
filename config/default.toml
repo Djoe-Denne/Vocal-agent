@@ -6,15 +6,6 @@ tls_enabled = false
 [logging]
 level = "info"
 
-[database]
-host = "localhost"
-port = 5432
-db = "asr_service"
-read_replicas = []
-[database.creds]
-username = "postgres"
-password = "postgres"
-
 [queue]
 type = "disabled"
 
