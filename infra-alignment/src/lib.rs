@@ -59,6 +59,8 @@ struct Wav2Vec2ModelConfig {
     vocab_size: usize,
     #[serde(default = "default_feat_norm")]
     feat_extract_norm: String,
+    #[serde(default = "default_conv_bias")]
+    conv_bias: bool,
 }
 
 fn default_eps() -> f64 {
@@ -66,6 +68,9 @@ fn default_eps() -> f64 {
 }
 fn default_feat_norm() -> String {
     "layer".to_string()
+}
+fn default_conv_bias() -> bool {
+    true
 }
 
 impl Wav2Vec2ModelConfig {
@@ -95,6 +100,7 @@ impl ConvLayer {
         out_c: usize,
         kernel: usize,
         stride: usize,
+        use_bias: bool,
         use_ln: bool,
         eps: f64,
         vb: VarBuilder,
@@ -103,7 +109,11 @@ impl ConvLayer {
             stride,
             ..Default::default()
         };
-        let conv = candle_nn::conv1d(in_c, out_c, kernel, cfg, vb.pp("conv"))?;
+        let conv = if use_bias {
+            candle_nn::conv1d(in_c, out_c, kernel, cfg, vb.pp("conv"))?
+        } else {
+            candle_nn::conv1d_no_bias(in_c, out_c, kernel, cfg, vb.pp("conv"))?
+        };
         let layer_norm = if use_ln {
             Some(layer_norm(out_c, eps, vb.pp("layer_norm"))?)
         } else {
@@ -128,15 +138,17 @@ struct FeatureExtractor {
 
 impl FeatureExtractor {
     fn load(cfg: &Wav2Vec2ModelConfig, vb: VarBuilder) -> candle_core::Result<Self> {
-        let use_ln = cfg.feat_extract_norm == "layer";
         let mut layers = Vec::with_capacity(cfg.conv_dim.len());
         for i in 0..cfg.conv_dim.len() {
             let in_c = if i == 0 { 1 } else { cfg.conv_dim[i - 1] };
+            let use_ln = cfg.feat_extract_norm == "layer"
+                || (cfg.feat_extract_norm == "group" && i == 0);
             layers.push(ConvLayer::load(
                 in_c,
                 cfg.conv_dim[i],
                 cfg.conv_kernel[i],
                 cfg.conv_stride[i],
+                cfg.conv_bias,
                 use_ln,
                 cfg.layer_norm_eps,
                 vb.pp(format!("conv_layers.{i}")),
