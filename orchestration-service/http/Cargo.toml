@@ -1,12 +1,12 @@
 [package]
-name = "asr-http_server"
+name = "orchestration-http_server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-application = { path = "../application" }
+orchestration-application = { path = "../application" }
 anyhow = { workspace = true }
 axum = { workspace = true }
 rustycog-command = { workspace = true }

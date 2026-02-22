@@ -1,6 +1,6 @@
 [server]
 host = "127.0.0.1"
-port = 8080
+port = 8082
 tls_enabled = false
 
 [logging]
@@ -15,7 +15,7 @@ sample_rate_hz = 16000
 chunk_ms = 500
 
 [service.asr]
-model_path = "models/ggml-large-v3-q5_0.bin"
+model_path = "../models/ggml-large-v3-q5_0.bin"
 default_language = "auto"
 supported_languages = ["fr", "en"]
 temperature = 0.0

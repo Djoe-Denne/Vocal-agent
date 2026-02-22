@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use asr_domain::{Transcript, WordTiming};
+use orchestration_domain::{Transcript, WordTiming};
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct TranscribeAudioRequest {

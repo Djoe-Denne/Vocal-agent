@@ -1,5 +1,5 @@
 [package]
-name = "asr-domain"
+name = "orchestration-domain"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

@@ -1,20 +1,15 @@
 [package]
-name = "asr-infra-alignment"
+name = "orchestration-infra-alignment"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-domain = { path = "../domain" }
+orchestration-domain = { path = "../domain" }
+alignment-grpc_server = { path = "../../alignment-service/grpc" }
 async-trait = { workspace = true }
-candle-core = { workspace = true }
-candle-nn = { workspace = true }
-safetensors = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
-
-[features]
-default = []
-cuda = ["candle-core/cuda"]

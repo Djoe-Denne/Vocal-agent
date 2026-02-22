@@ -1,14 +1,17 @@
 [package]
-name = "asr-infra-audio"
+name = "orchestration-infra-audio"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-domain = { path = "../domain" }
+orchestration-domain = { path = "../domain" }
+audio-grpc_server = { path = "../../audio-service/grpc" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

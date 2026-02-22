@@ -16,6 +16,8 @@ alignment-domain = { path = "../domain" }
 alignment-grpc_server = { path = "../grpc" }
 alignment-infra-alignment = { path = "../infra-alignment" }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 rustycog-command = { workspace = true }
 rustycog-config = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }

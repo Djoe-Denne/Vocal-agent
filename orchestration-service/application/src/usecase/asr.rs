@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_json::json;
 use uuid::Uuid;
 
-use asr_domain::{DomainEvent, LanguageTag, PipelineContext};
+use orchestration_domain::{DomainEvent, LanguageTag, PipelineContext};
 
 use crate::{ApplicationError, PipelineEngine, TranscribeAudioRequest, TranscribeAudioResponse};
 
@@ -103,7 +103,7 @@ fn parse_language_hint(value: Option<&str>) -> Result<Option<LanguageTag>, Appli
     Ok(Some(parsed))
 }
 
-fn extract_alignment_words(context: &PipelineContext) -> Vec<asr_domain::WordTiming> {
+fn extract_alignment_words(context: &PipelineContext) -> Vec<orchestration_domain::WordTiming> {
     if !context.aligned_words.is_empty() {
         return context.aligned_words.clone();
     }

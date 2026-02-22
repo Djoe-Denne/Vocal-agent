@@ -14,7 +14,7 @@ sample_rate_hz = 16000
 chunk_ms = 500
 
 [service.asr]
-model_path = "models/ggml-base.bin"
+model_path = "../models/ggml-base.bin"
 default_language = "auto"
 supported_languages = ["fr", "en"]
 temperature = 0.0

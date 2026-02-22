@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use asr_application::{AsrUseCase, AsrUseCaseImpl, PipelineEngine, TranscribeAudioRequest};
-use asr_domain::{
+use orchestration_application::{AsrUseCase, AsrUseCaseImpl, PipelineEngine, TranscribeAudioRequest};
+use orchestration_domain::{
     DomainError, DomainEvent, LanguageTag, PipelineContext, PipelineStage, Transcript,
     TranscriptSegment, WordTiming,
 };

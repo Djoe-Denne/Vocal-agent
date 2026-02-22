@@ -21,4 +21,5 @@ asr-infra-asr-whisper = { path = "../infra-asr-whisper" }
 anyhow = { workspace = true }
 rustycog-command = { workspace = true }
 rustycog-config = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }

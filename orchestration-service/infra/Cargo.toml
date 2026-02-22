@@ -1,12 +1,12 @@
 [package]
-name = "asr-infra"
+name = "orchestration-infra"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-domain = { path = "../domain" }
+orchestration-domain = { path = "../domain" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

@@ -1,6 +1,6 @@
 [server]
 host = "127.0.0.1"
-port = 8080
+port = 8090
 tls_enabled = false
 
 [logging]
@@ -10,24 +10,37 @@ level = "debug"
 [queue]
 type = "disabled"
 
+[service.audio]
+host = "127.0.0.1"
+port = 8081
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
 [service.asr]
-model_path = "models/ggml-large-v3-q5_0.bin"
-threads = 6
+host = "127.0.0.1"
+port = 8082
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
+[service.alignment]
+host = "127.0.0.1"
+port = 8083
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
 
 [service.pipeline]
 selected = "development"
 
 [service.pipeline.definitions.development]
-pre = ["resample", "audio_clamp"]
-transcription = "whisper_transcription"
-post = ["wav2vec2_alignment"]
-
-[service.pipeline.plugins.resample]
-enabled = true
-target_sample_rate_hz = 16000
-
-[service.pipeline.plugins.wav2vec2]
-model_path  = "models/asr-wav2vec2-ctc-french/model.safetensors"
-config_path = "models/asr-wav2vec2-ctc-french/config.json"
-vocab_path  = "models/asr-wav2vec2-ctc-french/vocab.json"
-device="cuda"
+pre = ["audio_transform"]
+transcription = "asr_transcribe"
+post = ["alignment_enrich"]

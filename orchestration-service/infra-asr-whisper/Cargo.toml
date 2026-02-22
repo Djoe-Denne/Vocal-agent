@@ -1,18 +1,15 @@
 [package]
-name = "asr-infra-asr-whisper"
+name = "orchestration-infra-asr"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-domain = { path = "../domain" }
+orchestration-domain = { path = "../domain" }
+asr-grpc_server = { path = "../../asr-service/grpc" }
 async-trait = { workspace = true }
-whisper-rs = { workspace = true, optional = true }
-
-[features]
-default = []
-whisper-runtime = ["dep:whisper-rs"]
-whisper-cuda = ["whisper-runtime", "whisper-rs/cuda"]
-whisper-vulkan = ["whisper-runtime", "whisper-rs/vulkan"]
-whisper-openblas = ["whisper-runtime", "whisper-rs/openblas"]
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }

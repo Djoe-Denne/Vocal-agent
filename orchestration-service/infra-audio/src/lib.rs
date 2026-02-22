@@ -1,155 +1,93 @@
-use asr_domain::{DomainError, PipelineContext, PipelineStage};
+use std::time::Duration;
+
 use async_trait::async_trait;
+use audio_grpc_server::{pb, AudioServiceClient};
+use orchestration_domain::{DomainError, PipelineContext, PipelineStage};
 use serde_json::json;
+use tonic::transport::{Channel, Endpoint};
+use tonic::Request;
 
-pub struct AudioPreprocessStage;
-
-impl AudioPreprocessStage {
-    pub fn new() -> Self {
-        Self
-    }
+pub struct AudioTransformStage {
+    client: AudioServiceClient<Channel>,
+    request_timeout: Duration,
+    target_sample_rate_hz: Option<u32>,
 }
 
-#[async_trait]
-impl PipelineStage for AudioPreprocessStage {
-    fn name(&self) -> &'static str {
-        "audio-preprocess"
-    }
-
-    async fn execute(&self, context: &mut PipelineContext) -> Result<(), DomainError> {
-        for sample in &mut context.audio.samples {
-            *sample = sample.clamp(-1.0, 1.0);
-        }
-        Ok(())
-    }
-}
-
-pub struct ResampleStage {
-    target_sample_rate_hz: u32,
-}
-
-impl ResampleStage {
-    pub fn new(target_sample_rate_hz: u32) -> Self {
+impl AudioTransformStage {
+    pub fn new(
+        client: AudioServiceClient<Channel>,
+        request_timeout: Duration,
+        target_sample_rate_hz: Option<u32>,
+    ) -> Self {
         Self {
+            client,
+            request_timeout,
             target_sample_rate_hz,
         }
     }
 }
 
 #[async_trait]
-impl PipelineStage for ResampleStage {
+impl PipelineStage for AudioTransformStage {
     fn name(&self) -> &'static str {
-        "resample"
+        "audio_transform"
     }
 
     async fn execute(&self, context: &mut PipelineContext) -> Result<(), DomainError> {
-        let source_rate_hz = context.audio.sample_rate_hz;
-        if source_rate_hz == 0 || self.target_sample_rate_hz == 0 {
-            return Err(DomainError::internal_error(
-                "sample rate must be greater than zero",
-            ));
+        let mut client = self.client.clone();
+        let request = pb::TransformAudioRequest {
+            samples: context.audio.samples.clone(),
+            sample_rate_hz: Some(context.audio.sample_rate_hz),
+            target_sample_rate_hz: self.target_sample_rate_hz,
+            session_id: Some(context.session_id.clone()),
+        };
+        let rpc = client.transform_audio(Request::new(request));
+        let response = tokio::time::timeout(self.request_timeout, rpc)
+            .await
+            .map_err(|_| DomainError::external_service_error("audio", "gRPC request timed out"))?
+            .map_err(|status| map_status("audio", status))?
+            .into_inner();
+
+        context.session_id = response.session_id;
+        context.audio.samples = response.samples;
+        context.audio.sample_rate_hz = response.sample_rate_hz;
+        if let Some(metadata) = response.metadata {
+            context.set_extension(
+                "audio.transform",
+                json!({
+                    "clamped": metadata.clamped,
+                    "resampled": metadata.resampled,
+                    "input_sample_count": metadata.input_sample_count,
+                    "output_sample_count": metadata.output_sample_count,
+                    "source_sample_rate_hz": metadata.source_sample_rate_hz,
+                    "target_sample_rate_hz": metadata.target_sample_rate_hz,
+                }),
+            );
         }
-
-        if source_rate_hz == self.target_sample_rate_hz || context.audio.samples.is_empty() {
-            context.set_extension("audio.resampled", json!(false));
-            return Ok(());
-        }
-
-        let resampled = resample_linear(
-            &context.audio.samples,
-            source_rate_hz,
-            self.target_sample_rate_hz,
-        );
-
-        tracing::debug!(
-            source_rate_hz,
-            target_rate_hz = self.target_sample_rate_hz,
-            input_samples = context.audio.samples.len(),
-            output_samples = resampled.len(),
-            "resampled audio for pipeline"
-        );
-
-        context.audio.samples = resampled;
-        context.audio.sample_rate_hz = self.target_sample_rate_hz;
-        context.set_extension("audio.resampled", json!(true));
-        context.set_extension("audio.source_sample_rate_hz", json!(source_rate_hz));
-        context.set_extension("audio.target_sample_rate_hz", json!(self.target_sample_rate_hz));
         Ok(())
     }
 }
 
-fn resample_linear(samples: &[f32], source_rate_hz: u32, target_rate_hz: u32) -> Vec<f32> {
-    if source_rate_hz == target_rate_hz {
-        return samples.to_vec();
-    }
-    if samples.len() <= 1 {
-        return samples.to_vec();
-    }
-
-    let output_len = ((samples.len() as u64 * target_rate_hz as u64) / source_rate_hz as u64)
-        .max(1) as usize;
-    if output_len <= 1 {
-        return vec![samples[0]];
-    }
-
-    let mut output = Vec::with_capacity(output_len);
-    let max_source_idx = samples.len() - 1;
-
-    for out_idx in 0..output_len {
-        let source_pos = out_idx as f64 * source_rate_hz as f64 / target_rate_hz as f64;
-        let left_idx = source_pos.floor() as usize;
-        let right_idx = (left_idx + 1).min(max_source_idx);
-        let frac = (source_pos - left_idx as f64) as f32;
-
-        let left = samples[left_idx];
-        let right = samples[right_idx];
-        output.push(left * (1.0 - frac) + right * frac);
-    }
-
-    output
+pub async fn connect_audio_client(
+    endpoint_uri: &str,
+    connect_timeout: Duration,
+    max_decoding_message_bytes: usize,
+    max_encoding_message_bytes: usize,
+) -> Result<AudioServiceClient<Channel>, DomainError> {
+    let endpoint = Endpoint::from_shared(endpoint_uri.to_string())
+        .map_err(|err| DomainError::internal_error(&format!("invalid audio endpoint: {err}")))?
+        .connect_timeout(connect_timeout);
+    let channel = endpoint.connect().await.map_err(|err| {
+        DomainError::external_service_error("audio", &format!("failed to connect: {err}"))
+    })?;
+    Ok(AudioServiceClient::new(channel)
+        .max_decoding_message_size(max_decoding_message_bytes)
+        .max_encoding_message_size(max_encoding_message_bytes))
 }
 
-pub fn pcm16le_bytes_to_f32(samples: &[u8]) -> Vec<f32> {
-    samples
-        .chunks_exact(2)
-        .map(|chunk| {
-            let value = i16::from_le_bytes([chunk[0], chunk[1]]);
-            f32::from(value) / f32::from(i16::MAX)
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{AudioPreprocessStage, ResampleStage};
-    use asr_domain::{PipelineContext, PipelineStage};
-
-    #[tokio::test]
-    async fn audio_preprocess_clamps_samples() {
-        let stage = AudioPreprocessStage::new();
-        let mut context = PipelineContext::new("session", None);
-        context.audio.sample_rate_hz = 16_000;
-        context.audio.samples = vec![-2.0, -1.0, 0.0, 1.0, 2.0];
-
-        stage.execute(&mut context).await.expect("stage runs");
-
-        assert_eq!(context.audio.samples, vec![-1.0, -1.0, 0.0, 1.0, 1.0]);
-    }
-
-    #[tokio::test]
-    async fn resample_stage_changes_sample_rate() {
-        let stage = ResampleStage::new(16_000);
-        let mut context = PipelineContext::new("session", None);
-        context.audio.sample_rate_hz = 48_000;
-        context.audio.samples = (0..480).map(|i| i as f32 / 480.0).collect();
-
-        stage.execute(&mut context).await.expect("stage runs");
-
-        assert_eq!(context.audio.sample_rate_hz, 16_000);
-        assert!(context.audio.samples.len() < 480);
-        assert_eq!(
-            context.extension("audio.resampled").and_then(|value| value.as_bool()),
-            Some(true)
-        );
-    }
+fn map_status(service: &str, status: tonic::Status) -> DomainError {
+    DomainError::external_service_error(
+        service,
+        &format!("gRPC {}: {}", status.code(), status.message()),
+    )
 }

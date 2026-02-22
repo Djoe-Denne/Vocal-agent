@@ -18,6 +18,14 @@ members = [
     "alignment-service/grpc",
     "alignment-service/infra-alignment",
     "alignment-service/setup",
+    "orchestration-service/application",
+    "orchestration-service/configuration",
+    "orchestration-service/domain",
+    "orchestration-service/http",
+    "orchestration-service/infra-audio",
+    "orchestration-service/infra-asr-whisper",
+    "orchestration-service/infra-alignment",
+    "orchestration-service/setup",
 ]
 resolver = "2"
 

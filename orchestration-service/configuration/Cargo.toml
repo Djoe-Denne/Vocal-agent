@@ -1,5 +1,5 @@
 [package]
-name = "asr-configuration"
+name = "orchestration-configuration"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true

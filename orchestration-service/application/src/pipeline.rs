@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use asr_domain::{DomainError, PipelineContext, PipelineStage};
+use orchestration_domain::{DomainError, PipelineContext, PipelineStage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PipelineStepSpec {
@@ -73,7 +73,7 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use asr_domain::{
+    use orchestration_domain::{
         DomainError, DomainEvent, LanguageTag, PipelineContext, PipelineStage, Transcript,
         TranscriptSegment,
     };

@@ -8,10 +8,10 @@ use rustycog_config::{
 
 pub use rustycog_logger::setup_logging;
 
-pub type AppConfig = AsrConfig;
+pub type AppConfig = OrchestrationConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AsrConfig {
+pub struct OrchestrationConfig {
     #[serde(default)]
     pub server: ServerConfig,
     #[serde(default)]
@@ -24,48 +24,32 @@ pub struct AsrConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
+    #[serde(default = "default_audio_endpoint")]
+    pub audio: GrpcEndpointConfig,
+    #[serde(default = "default_asr_endpoint")]
+    pub asr: GrpcEndpointConfig,
+    #[serde(default = "default_alignment_endpoint")]
+    pub alignment: GrpcEndpointConfig,
     #[serde(default)]
-    pub audio: AudioConfig,
-    #[serde(default)]
-    pub asr: AsrRuntimeConfig,
-    #[serde(default)]
-    pub alignment: AlignmentConfig,
-    #[serde(default)]
-    pub pipeline: Option<PipelineConfig>,
+    pub pipeline: PipelineConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AudioConfig {
-    #[serde(default = "default_sample_rate")]
-    pub sample_rate_hz: u32,
-    #[serde(default = "default_chunk_ms")]
-    pub chunk_ms: u32,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AsrRuntimeConfig {
-    #[serde(default = "default_model_path")]
-    pub model_path: String,
-    #[serde(default = "default_language")]
-    pub default_language: String,
-    #[serde(default = "default_supported_languages")]
-    pub supported_languages: Vec<String>,
+pub struct GrpcEndpointConfig {
+    #[serde(default = "default_grpc_host")]
+    pub host: String,
+    #[serde(default = "default_grpc_port")]
+    pub port: u16,
     #[serde(default)]
-    pub temperature: f32,
-    #[serde(default = "default_threads")]
-    pub threads: usize,
-    #[serde(default = "default_dtw_preset")]
-    pub dtw_preset: String,
-    #[serde(default = "default_dtw_mem_size")]
-    pub dtw_mem_size: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlignmentConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_min_word_duration_ms")]
-    pub min_word_duration_ms: u64,
+    pub tls_enabled: bool,
+    #[serde(default = "default_grpc_connect_timeout_ms")]
+    pub connect_timeout_ms: u64,
+    #[serde(default = "default_grpc_request_timeout_ms")]
+    pub request_timeout_ms: u64,
+    #[serde(default = "default_grpc_max_message_bytes")]
+    pub max_decoding_message_bytes: usize,
+    #[serde(default = "default_grpc_max_message_bytes")]
+    pub max_encoding_message_bytes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,8 +58,6 @@ pub struct PipelineConfig {
     pub selected: String,
     #[serde(default = "default_pipeline_definitions")]
     pub definitions: HashMap<String, PipelineDefinitionConfig>,
-    #[serde(default)]
-    pub plugins: PipelinePluginsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -104,46 +86,7 @@ impl PipelineStepRef {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct PipelinePluginsConfig {
-    #[serde(default)]
-    pub resample: ResamplePluginConfig,
-    #[serde(default)]
-    pub wav2vec2: Wav2Vec2PluginConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Wav2Vec2PluginConfig {
-    #[serde(default = "default_wav2vec2_model_path")]
-    pub model_path: String,
-    #[serde(default = "default_wav2vec2_config_path")]
-    pub config_path: String,
-    #[serde(default = "default_wav2vec2_vocab_path")]
-    pub vocab_path: String,
-    #[serde(default = "default_wav2vec2_device")]
-    pub device: String,
-}
-
-impl Default for Wav2Vec2PluginConfig {
-    fn default() -> Self {
-        Self {
-            model_path: default_wav2vec2_model_path(),
-            config_path: default_wav2vec2_config_path(),
-            vocab_path: default_wav2vec2_vocab_path(),
-            device: default_wav2vec2_device(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResamplePluginConfig {
-    #[serde(default = "default_false")]
-    pub enabled: bool,
-    #[serde(default = "default_sample_rate")]
-    pub target_sample_rate_hz: u32,
-}
-
-impl Default for AsrConfig {
+impl Default for OrchestrationConfig {
     fn default() -> Self {
         Self {
             server: ServerConfig::default(),
@@ -157,42 +100,24 @@ impl Default for AsrConfig {
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
-            audio: AudioConfig::default(),
-            asr: AsrRuntimeConfig::default(),
-            alignment: AlignmentConfig::default(),
-            pipeline: None,
+            audio: default_audio_endpoint(),
+            asr: default_asr_endpoint(),
+            alignment: default_alignment_endpoint(),
+            pipeline: PipelineConfig::default(),
         }
     }
 }
 
-impl Default for AudioConfig {
+impl Default for GrpcEndpointConfig {
     fn default() -> Self {
         Self {
-            sample_rate_hz: default_sample_rate(),
-            chunk_ms: default_chunk_ms(),
-        }
-    }
-}
-
-impl Default for AsrRuntimeConfig {
-    fn default() -> Self {
-        Self {
-            model_path: default_model_path(),
-            default_language: default_language(),
-            supported_languages: default_supported_languages(),
-            temperature: 0.0,
-            threads: default_threads(),
-            dtw_preset: default_dtw_preset(),
-            dtw_mem_size: default_dtw_mem_size(),
-        }
-    }
-}
-
-impl Default for AlignmentConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_true(),
-            min_word_duration_ms: default_min_word_duration_ms(),
+            host: default_grpc_host(),
+            port: default_grpc_port(),
+            tls_enabled: false,
+            connect_timeout_ms: default_grpc_connect_timeout_ms(),
+            request_timeout_ms: default_grpc_request_timeout_ms(),
+            max_decoding_message_bytes: default_grpc_max_message_bytes(),
+            max_encoding_message_bytes: default_grpc_max_message_bytes(),
         }
     }
 }
@@ -202,7 +127,6 @@ impl Default for PipelineConfig {
         Self {
             selected: default_pipeline_name(),
             definitions: default_pipeline_definitions(),
-            plugins: PipelinePluginsConfig::default(),
         }
     }
 }
@@ -210,33 +134,24 @@ impl Default for PipelineConfig {
 impl Default for PipelineDefinitionConfig {
     fn default() -> Self {
         Self {
-            pre: vec![PipelineStepRef::Name("audio_clamp".to_string())],
+            pre: vec![PipelineStepRef::Name("audio_transform".to_string())],
             transcription: default_pipeline_transcription_step(),
-            post: vec![PipelineStepRef::Name("wav2vec2_alignment".to_string())],
+            post: vec![PipelineStepRef::Name("alignment_enrich".to_string())],
         }
     }
 }
 
-impl Default for ResamplePluginConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            target_sample_rate_hz: default_sample_rate(),
-        }
-    }
-}
-
-impl ConfigLoader<AsrConfig> for AsrConfig {
-    fn create_default() -> AsrConfig {
-        AsrConfig::default()
+impl ConfigLoader<OrchestrationConfig> for OrchestrationConfig {
+    fn create_default() -> OrchestrationConfig {
+        OrchestrationConfig::default()
     }
 
     fn config_prefix() -> &'static str {
-        "ASR_SERVICE"
+        "ORCHESTRATION_SERVICE"
     }
 }
 
-impl HasServerConfig for AsrConfig {
+impl HasServerConfig for OrchestrationConfig {
     fn server_config(&self) -> &ServerConfig {
         &self.server
     }
@@ -246,7 +161,7 @@ impl HasServerConfig for AsrConfig {
     }
 }
 
-impl HasLoggingConfig for AsrConfig {
+impl HasLoggingConfig for OrchestrationConfig {
     fn logging_config(&self) -> &LoggingConfig {
         &self.logging
     }
@@ -256,7 +171,7 @@ impl HasLoggingConfig for AsrConfig {
     }
 }
 
-impl HasQueueConfig for AsrConfig {
+impl HasQueueConfig for OrchestrationConfig {
     fn queue_config(&self) -> &QueueConfig {
         &self.queue
     }
@@ -266,48 +181,49 @@ impl HasQueueConfig for AsrConfig {
     }
 }
 
-pub fn load_config() -> Result<AsrConfig, ConfigError> {
-    load_config_fresh::<AsrConfig>()
+pub fn load_config() -> Result<OrchestrationConfig, ConfigError> {
+    load_config_fresh::<OrchestrationConfig>()
 }
 
-fn default_true() -> bool {
-    true
+fn default_grpc_host() -> String {
+    "127.0.0.1".to_string()
 }
 
-fn default_false() -> bool {
-    false
+fn default_grpc_port() -> u16 {
+    8080
 }
 
-fn default_sample_rate() -> u32 {
-    16_000
+fn default_grpc_connect_timeout_ms() -> u64 {
+    3_000
 }
 
-fn default_chunk_ms() -> u32 {
-    500
+fn default_grpc_request_timeout_ms() -> u64 {
+    60_000
 }
 
-fn default_model_path() -> String {
-    "models/ggml-base.bin".to_string()
+fn default_grpc_max_message_bytes() -> usize {
+    64 * 1024 * 1024
 }
 
-fn default_language() -> String {
-    "auto".to_string()
+fn default_audio_endpoint() -> GrpcEndpointConfig {
+    GrpcEndpointConfig {
+        port: 8081,
+        ..GrpcEndpointConfig::default()
+    }
 }
 
-fn default_supported_languages() -> Vec<String> {
-    vec!["fr".to_string(), "en".to_string()]
+fn default_asr_endpoint() -> GrpcEndpointConfig {
+    GrpcEndpointConfig {
+        port: 8080,
+        ..GrpcEndpointConfig::default()
+    }
 }
 
-fn default_threads() -> usize {
-    4
-}
-
-fn default_dtw_preset() -> String {
-    "base".to_string()
-}
-
-fn default_dtw_mem_size() -> usize {
-    128
+fn default_alignment_endpoint() -> GrpcEndpointConfig {
+    GrpcEndpointConfig {
+        port: 8082,
+        ..GrpcEndpointConfig::default()
+    }
 }
 
 fn default_pipeline_name() -> String {
@@ -321,27 +237,7 @@ fn default_pipeline_definitions() -> HashMap<String, PipelineDefinitionConfig> {
 }
 
 fn default_pipeline_transcription_step() -> PipelineStepRef {
-    PipelineStepRef::Name("whisper_transcription".to_string())
-}
-
-fn default_min_word_duration_ms() -> u64 {
-    40
-}
-
-fn default_wav2vec2_model_path() -> String {
-    "models/wav2vec2-fr.safetensors".to_string()
-}
-
-fn default_wav2vec2_config_path() -> String {
-    "models/wav2vec2-config.json".to_string()
-}
-
-fn default_wav2vec2_vocab_path() -> String {
-    "models/wav2vec2-vocab.json".to_string()
-}
-
-fn default_wav2vec2_device() -> String {
-    "cpu".to_string()
+    PipelineStepRef::Name("asr_transcribe".to_string())
 }
 
 #[cfg(test)]
@@ -350,10 +246,10 @@ mod tests {
 
     #[test]
     fn config_defaults_are_deterministic() {
-        let cfg = AsrConfig::default();
-        assert_eq!(cfg.service.audio.sample_rate_hz, 16_000);
-        assert_eq!(cfg.service.asr.temperature, 0.0);
-        assert!(cfg.service.alignment.enabled);
+        let cfg = OrchestrationConfig::default();
+        assert_eq!(cfg.service.audio.port, 8081);
+        assert_eq!(cfg.service.asr.port, 8080);
+        assert_eq!(cfg.service.alignment.port, 8082);
         assert_eq!(cfg.server.port, 8080);
     }
 }

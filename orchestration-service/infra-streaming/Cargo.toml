@@ -1,13 +1,13 @@
 [package]
-name = "asr-infra-streaming"
+name = "orchestration-infra-streaming"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-asr-application = { path = "../application" }
-asr-domain = { path = "../domain" }
+orchestration-application = { path = "../application" }
+orchestration-domain = { path = "../domain" }
 axum = { workspace = true }
 futures = { workspace = true }
 serde = { workspace = true }

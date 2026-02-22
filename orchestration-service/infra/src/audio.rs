@@ -1,4 +1,4 @@
-use asr_domain::{DomainError, PipelineContext, PipelineStage};
+use orchestration_domain::{DomainError, PipelineContext, PipelineStage};
 use async_trait::async_trait;
 use serde_json::json;
 
@@ -122,7 +122,7 @@ pub fn pcm16le_bytes_to_f32(samples: &[u8]) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::{AudioPreprocessStage, ResampleStage};
-    use asr_domain::{PipelineContext, PipelineStage};
+    use orchestration_domain::{PipelineContext, PipelineStage};
 
     #[tokio::test]
     async fn audio_preprocess_clamps_samples() {

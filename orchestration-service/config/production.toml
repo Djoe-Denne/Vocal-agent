@@ -9,17 +9,37 @@ level = "info"
 [queue]
 type = "disabled"
 
+[service.audio]
+host = "audio-service"
+port = 8080
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
 [service.asr]
-threads = 8
+host = "asr-service"
+port = 8080
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
+[service.alignment]
+host = "alignment-service"
+port = 8080
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
 
 [service.pipeline]
 selected = "production"
 
 [service.pipeline.definitions.production]
-pre = ["resample", "audio_clamp"]
-transcription = "whisper_transcription"
-post = ["wav2vec2_alignment"]
-
-[service.pipeline.plugins.resample]
-enabled = true
-target_sample_rate_hz = 16000
+pre = ["audio_transform"]
+transcription = "asr_transcribe"
+post = ["alignment_enrich"]

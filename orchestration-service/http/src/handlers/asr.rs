@@ -2,7 +2,7 @@ use axum::{extract::State, http::StatusCode, response::Json};
 use rustycog_command::CommandContext;
 use rustycog_http::{AppState, ValidatedJson};
 
-use asr_application::{TranscribeAudioCommand, TranscribeAudioRequest, TranscribeAudioResponse};
+use orchestration_application::{TranscribeAudioCommand, TranscribeAudioRequest, TranscribeAudioResponse};
 
 use crate::error::{error_mapper, HttpError};
 

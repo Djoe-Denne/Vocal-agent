@@ -1,0 +1,28 @@
+[package]
+name = "orchestration-setup"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+orchestration-application = { path = "../application" }
+orchestration-configuration = { path = "../configuration" }
+orchestration-domain = { path = "../domain" }
+orchestration-http_server = { path = "../http" }
+orchestration-infra-audio = { path = "../infra-audio" }
+orchestration-infra-asr = { path = "../infra-asr-whisper" }
+orchestration-infra-alignment = { path = "../infra-alignment" }
+anyhow = { workspace = true }
+rustycog-command = { workspace = true }
+rustycog-config = { workspace = true }
+rustycog-http = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+alignment-grpc_server = { path = "../../alignment-service/grpc" }
+asr-grpc_server = { path = "../../asr-service/grpc" }
+audio-grpc_server = { path = "../../audio-service/grpc" }
+async-trait = { workspace = true }
+tonic = { workspace = true }
