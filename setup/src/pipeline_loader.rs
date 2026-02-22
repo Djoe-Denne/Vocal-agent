@@ -6,11 +6,16 @@ use asr_application::{
     PipelineDefinition, PipelineEngine, PipelineStepLoader, PipelineStepSpec,
 };
 use asr_configuration::{AppConfig, PipelineDefinitionConfig, PipelineStepRef};
-use asr_domain::{AlignmentPort, DomainError, PipelineStage, TranscriptionPort};
-use asr_infra::{
-    AudioPreprocessStage, ForcedAlignmentStage, ResampleStage, SimpleForcedAligner,
+use asr_domain::{DomainError, PipelineStage};
+use asr_infra_audio::{AudioPreprocessStage, ResampleStage};
+#[cfg(feature = "whisper-runtime")]
+use asr_domain::TranscriptionPort;
+#[cfg(feature = "whisper-runtime")]
+use asr_infra_asr_whisper::{
     WhisperAdapterConfig, WhisperTranscriptionAdapter, WhisperTranscriptionStage,
 };
+#[cfg(feature = "wav2vec2-runtime")]
+use asr_infra_alignment::{Wav2Vec2AdapterConfig, Wav2Vec2AlignmentStage, Wav2Vec2ForcedAligner};
 
 pub trait PipelineStepPlugin: Send + Sync {
     fn name(&self) -> &'static str;
@@ -46,8 +51,10 @@ impl PipelinePluginLoader {
     fn register_builtin_plugins(&mut self) {
         self.register_plugin(Arc::new(AudioClampPlugin));
         self.register_plugin(Arc::new(ResamplePlugin));
+        #[cfg(feature = "whisper-runtime")]
         self.register_plugin(Arc::new(WhisperTranscriptionPlugin));
-        self.register_plugin(Arc::new(ForcedAlignmentPlugin));
+        #[cfg(feature = "wav2vec2-runtime")]
+        self.register_plugin(Arc::new(Wav2Vec2AlignmentPlugin));
     }
 }
 
@@ -87,7 +94,7 @@ fn legacy_default_pipeline(config: &AppConfig) -> PipelineDefinitionConfig {
     if !config.service.alignment.enabled {
         definition
             .post
-            .retain(|step| !step.name().eq_ignore_ascii_case("forced_alignment"));
+            .retain(|step| !step.name().eq_ignore_ascii_case("wav2vec2_alignment"));
     }
     definition
 }
@@ -120,6 +127,7 @@ fn to_step_spec(step: &PipelineStepRef) -> Result<PipelineStepSpec> {
     Ok(PipelineStepSpec::new(name.to_string()))
 }
 
+#[cfg(feature = "whisper-runtime")]
 fn normalize_dtw_mem_size(raw: usize) -> usize {
     const ONE_MIB: usize = 1024 * 1024;
     if raw < ONE_MIB {
@@ -166,8 +174,10 @@ impl PipelineStepPlugin for ResamplePlugin {
     }
 }
 
+#[cfg(feature = "whisper-runtime")]
 struct WhisperTranscriptionPlugin;
 
+#[cfg(feature = "whisper-runtime")]
 impl PipelineStepPlugin for WhisperTranscriptionPlugin {
     fn name(&self) -> &'static str {
         "whisper_transcription"
@@ -188,18 +198,36 @@ impl PipelineStepPlugin for WhisperTranscriptionPlugin {
     }
 }
 
-struct ForcedAlignmentPlugin;
+#[cfg(feature = "wav2vec2-runtime")]
+struct Wav2Vec2AlignmentPlugin;
 
-impl PipelineStepPlugin for ForcedAlignmentPlugin {
+#[cfg(feature = "wav2vec2-runtime")]
+impl PipelineStepPlugin for Wav2Vec2AlignmentPlugin {
     fn name(&self) -> &'static str {
-        "forced_alignment"
+        "wav2vec2_alignment"
     }
 
     fn build(&self, config: &AppConfig) -> Result<Arc<dyn PipelineStage>> {
-        let aligner: Box<dyn AlignmentPort> = Box::new(SimpleForcedAligner::new(
-            config.service.alignment.min_word_duration_ms,
-        ));
-        Ok(Arc::new(ForcedAlignmentStage::new(aligner)))
+        let pipeline_cfg = config
+            .service
+            .pipeline
+            .as_ref()
+            .ok_or_else(|| {
+                anyhow!("`wav2vec2_alignment` requires `service.pipeline` configuration")
+            })?;
+
+        let w2v_cfg = &pipeline_cfg.plugins.wav2vec2;
+        let adapter_cfg = Wav2Vec2AdapterConfig {
+            model_path: w2v_cfg.model_path.clone(),
+            config_path: w2v_cfg.config_path.clone(),
+            vocab_path: w2v_cfg.vocab_path.clone(),
+            device: w2v_cfg.device.clone(),
+        };
+
+        let aligner = Wav2Vec2ForcedAligner::load(&adapter_cfg)
+            .map_err(|e| anyhow!("wav2vec2 model loading failed: {e}"))?;
+
+        Ok(Arc::new(Wav2Vec2AlignmentStage::new(aligner)))
     }
 }
 
@@ -225,7 +253,7 @@ mod tests {
             definition
                 .post
                 .iter()
-                .all(|step| !step.name().eq_ignore_ascii_case("forced_alignment"))
+                .all(|step| !step.name().eq_ignore_ascii_case("wav2vec2_alignment"))
         );
     }
 
@@ -271,6 +299,7 @@ mod tests {
                     enabled: false,
                     target_sample_rate_hz: 16_000,
                 },
+                ..Default::default()
             },
         });
 

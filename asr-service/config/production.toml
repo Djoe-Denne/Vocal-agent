@@ -41,7 +41,7 @@ selected = "production"
 [service.pipeline.definitions.production]
 pre = ["resample", "audio_clamp"]
 transcription = "whisper_transcription"
-post = ["forced_alignment"]
+post = ["wav2vec2_alignment"]
 
 [service.pipeline.plugins.resample]
 enabled = true

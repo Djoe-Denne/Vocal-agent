@@ -11,6 +11,8 @@ whisper-runtime = ["asr-setup/whisper-runtime"]
 whisper-cuda = ["whisper-runtime", "asr-setup/whisper-cuda"]
 whisper-vulkan = ["whisper-runtime", "asr-setup/whisper-vulkan"]
 whisper-openblas = ["whisper-runtime", "asr-setup/whisper-openblas"]
+wav2vec2-runtime = ["asr-setup/wav2vec2-runtime"]
+wav2vec2-cuda = ["wav2vec2-runtime", "asr-setup/wav2vec2-cuda"]
 
 [dependencies]
 asr-configuration = { path = "../configuration" }

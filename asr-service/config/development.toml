@@ -41,7 +41,7 @@ selected = "development"
 [service.pipeline.definitions.development]
 pre = ["resample", "audio_clamp"]
 transcription = "whisper_transcription"
-post = ["forced_alignment"]
+post = ["wav2vec2_alignment"]
 
 [service.pipeline.plugins.resample]
 enabled = true

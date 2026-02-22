@@ -41,7 +41,7 @@ selected = "default"
 [service.pipeline.definitions.default]
 pre = ["audio_clamp"]
 transcription = "whisper_transcription"
-post = ["forced_alignment"]
+post = ["wav2vec2_alignment"]
 
 [service.pipeline.plugins.resample]
 enabled = false

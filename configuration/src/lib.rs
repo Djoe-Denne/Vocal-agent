@@ -110,6 +110,31 @@ impl PipelineStepRef {
 pub struct PipelinePluginsConfig {
     #[serde(default)]
     pub resample: ResamplePluginConfig,
+    #[serde(default)]
+    pub wav2vec2: Wav2Vec2PluginConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Wav2Vec2PluginConfig {
+    #[serde(default = "default_wav2vec2_model_path")]
+    pub model_path: String,
+    #[serde(default = "default_wav2vec2_config_path")]
+    pub config_path: String,
+    #[serde(default = "default_wav2vec2_vocab_path")]
+    pub vocab_path: String,
+    #[serde(default = "default_wav2vec2_device")]
+    pub device: String,
+}
+
+impl Default for Wav2Vec2PluginConfig {
+    fn default() -> Self {
+        Self {
+            model_path: default_wav2vec2_model_path(),
+            config_path: default_wav2vec2_config_path(),
+            vocab_path: default_wav2vec2_vocab_path(),
+            device: default_wav2vec2_device(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,7 +215,7 @@ impl Default for PipelineDefinitionConfig {
         Self {
             pre: vec![PipelineStepRef::Name("audio_clamp".to_string())],
             transcription: default_pipeline_transcription_step(),
-            post: vec![PipelineStepRef::Name("forced_alignment".to_string())],
+            post: vec![PipelineStepRef::Name("wav2vec2_alignment".to_string())],
         }
     }
 }
@@ -314,6 +339,22 @@ fn default_pipeline_transcription_step() -> PipelineStepRef {
 
 fn default_min_word_duration_ms() -> u64 {
     40
+}
+
+fn default_wav2vec2_model_path() -> String {
+    "models/wav2vec2-fr.safetensors".to_string()
+}
+
+fn default_wav2vec2_config_path() -> String {
+    "models/wav2vec2-config.json".to_string()
+}
+
+fn default_wav2vec2_vocab_path() -> String {
+    "models/wav2vec2-vocab.json".to_string()
+}
+
+fn default_wav2vec2_device() -> String {
+    "cpu".to_string()
 }
 
 #[cfg(test)]

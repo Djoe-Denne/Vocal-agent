@@ -10,14 +10,6 @@ asr-domain = { path = "../domain" }
 async-trait = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-whisper-rs = { workspace = true, optional = true }
-
-[features]
-default = []
-whisper-runtime = ["dep:whisper-rs"]
-whisper-cuda = ["whisper-runtime", "whisper-rs/cuda"]
-whisper-vulkan = ["whisper-runtime", "whisper-rs/vulkan"]
-whisper-openblas = ["whisper-runtime", "whisper-rs/openblas"]
 
 [dev-dependencies]
 tokio = { workspace = true }

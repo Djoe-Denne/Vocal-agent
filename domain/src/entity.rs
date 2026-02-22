@@ -110,6 +110,7 @@ pub struct TranscriptionOutput {
 
 #[derive(Debug, Clone)]
 pub struct AlignmentRequest {
+    pub audio: AudioChunk,
     pub transcript: Transcript,
 }
 
