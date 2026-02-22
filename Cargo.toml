@@ -1,0 +1,65 @@
+[workspace]
+members = [
+    "asr-service/application",
+    "asr-service/configuration",
+    "asr-service/domain",
+    "asr-service/grpc",
+    "asr-service/infra-asr-whisper",
+    "asr-service/setup",
+    "audio-service/application",
+    "audio-service/configuration",
+    "audio-service/domain",
+    "audio-service/grpc",
+    "audio-service/infra",
+    "audio-service/setup",
+    "alignment-service/application",
+    "alignment-service/configuration",
+    "alignment-service/domain",
+    "alignment-service/grpc",
+    "alignment-service/infra-alignment",
+    "alignment-service/setup",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["djden"]
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sea-orm = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+candle-transformers = "0.9.2"
+safetensors = "0.7.0"
+whisper-rs = "0.15"
+validator = { version = "0.20", features = ["derive"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
+futures = "0.3"
+tokio-tungstenite = "0.28.0"
+tonic = "0.14.5"
+prost = "0.14.3"
+tonic-build = "0.14.5"
+tonic-prost-build = "0.14.5"
+tonic-prost = "0.14.5"
+protoc-bin-vendored = "3.2.0"
+
+# RustyCog crates from the shared AIForAll workspace.
+rustycog-config = { path = "../AIForAll/rustycog/rustycog-config" }
+rustycog-server = { path = "../AIForAll/rustycog/rustycog-server" }
+rustycog-core = { path = "../AIForAll/rustycog/rustycog-core" }
+rustycog-logger = { path = "../AIForAll/rustycog/rustycog-logger" }
+rustycog-command = { path = "../AIForAll/rustycog/rustycog-command" }
+rustycog-http = { path = "../AIForAll/rustycog/rustycog-http" }
+rustycog-testing = { path = "../AIForAll/rustycog/rustycog-testing" }

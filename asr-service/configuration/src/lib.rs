@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use rustycog_config::{
     load_config_fresh, ConfigError, ConfigLoader, HasLoggingConfig, HasQueueConfig,
@@ -28,10 +27,6 @@ pub struct ServiceConfig {
     pub audio: AudioConfig,
     #[serde(default)]
     pub asr: AsrRuntimeConfig,
-    #[serde(default)]
-    pub alignment: AlignmentConfig,
-    #[serde(default)]
-    pub pipeline: Option<PipelineConfig>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -60,89 +55,6 @@ pub struct AsrRuntimeConfig {
     pub dtw_mem_size: usize,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AlignmentConfig {
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-    #[serde(default = "default_min_word_duration_ms")]
-    pub min_word_duration_ms: u64,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineConfig {
-    #[serde(default = "default_pipeline_name")]
-    pub selected: String,
-    #[serde(default = "default_pipeline_definitions")]
-    pub definitions: HashMap<String, PipelineDefinitionConfig>,
-    #[serde(default)]
-    pub plugins: PipelinePluginsConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineDefinitionConfig {
-    #[serde(default)]
-    pub pre: Vec<PipelineStepRef>,
-    #[serde(default = "default_pipeline_transcription_step")]
-    pub transcription: PipelineStepRef,
-    #[serde(default)]
-    pub post: Vec<PipelineStepRef>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum PipelineStepRef {
-    Name(String),
-    WithName { name: String },
-}
-
-impl PipelineStepRef {
-    pub fn name(&self) -> &str {
-        match self {
-            PipelineStepRef::Name(name) => name,
-            PipelineStepRef::WithName { name } => name,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct PipelinePluginsConfig {
-    #[serde(default)]
-    pub resample: ResamplePluginConfig,
-    #[serde(default)]
-    pub wav2vec2: Wav2Vec2PluginConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Wav2Vec2PluginConfig {
-    #[serde(default = "default_wav2vec2_model_path")]
-    pub model_path: String,
-    #[serde(default = "default_wav2vec2_config_path")]
-    pub config_path: String,
-    #[serde(default = "default_wav2vec2_vocab_path")]
-    pub vocab_path: String,
-    #[serde(default = "default_wav2vec2_device")]
-    pub device: String,
-}
-
-impl Default for Wav2Vec2PluginConfig {
-    fn default() -> Self {
-        Self {
-            model_path: default_wav2vec2_model_path(),
-            config_path: default_wav2vec2_config_path(),
-            vocab_path: default_wav2vec2_vocab_path(),
-            device: default_wav2vec2_device(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ResamplePluginConfig {
-    #[serde(default = "default_false")]
-    pub enabled: bool,
-    #[serde(default = "default_sample_rate")]
-    pub target_sample_rate_hz: u32,
-}
-
 impl Default for AsrConfig {
     fn default() -> Self {
         Self {
@@ -159,8 +71,6 @@ impl Default for ServiceConfig {
         Self {
             audio: AudioConfig::default(),
             asr: AsrRuntimeConfig::default(),
-            alignment: AlignmentConfig::default(),
-            pipeline: None,
         }
     }
 }
@@ -184,44 +94,6 @@ impl Default for AsrRuntimeConfig {
             threads: default_threads(),
             dtw_preset: default_dtw_preset(),
             dtw_mem_size: default_dtw_mem_size(),
-        }
-    }
-}
-
-impl Default for AlignmentConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_true(),
-            min_word_duration_ms: default_min_word_duration_ms(),
-        }
-    }
-}
-
-impl Default for PipelineConfig {
-    fn default() -> Self {
-        Self {
-            selected: default_pipeline_name(),
-            definitions: default_pipeline_definitions(),
-            plugins: PipelinePluginsConfig::default(),
-        }
-    }
-}
-
-impl Default for PipelineDefinitionConfig {
-    fn default() -> Self {
-        Self {
-            pre: vec![PipelineStepRef::Name("audio_clamp".to_string())],
-            transcription: default_pipeline_transcription_step(),
-            post: vec![PipelineStepRef::Name("wav2vec2_alignment".to_string())],
-        }
-    }
-}
-
-impl Default for ResamplePluginConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            target_sample_rate_hz: default_sample_rate(),
         }
     }
 }
@@ -270,14 +142,6 @@ pub fn load_config() -> Result<AsrConfig, ConfigError> {
     load_config_fresh::<AsrConfig>()
 }
 
-fn default_true() -> bool {
-    true
-}
-
-fn default_false() -> bool {
-    false
-}
-
 fn default_sample_rate() -> u32 {
     16_000
 }
@@ -310,40 +174,6 @@ fn default_dtw_mem_size() -> usize {
     128
 }
 
-fn default_pipeline_name() -> String {
-    "default".to_string()
-}
-
-fn default_pipeline_definitions() -> HashMap<String, PipelineDefinitionConfig> {
-    let mut definitions = HashMap::new();
-    definitions.insert(default_pipeline_name(), PipelineDefinitionConfig::default());
-    definitions
-}
-
-fn default_pipeline_transcription_step() -> PipelineStepRef {
-    PipelineStepRef::Name("whisper_transcription".to_string())
-}
-
-fn default_min_word_duration_ms() -> u64 {
-    40
-}
-
-fn default_wav2vec2_model_path() -> String {
-    "models/wav2vec2-fr.safetensors".to_string()
-}
-
-fn default_wav2vec2_config_path() -> String {
-    "models/wav2vec2-config.json".to_string()
-}
-
-fn default_wav2vec2_vocab_path() -> String {
-    "models/wav2vec2-vocab.json".to_string()
-}
-
-fn default_wav2vec2_device() -> String {
-    "cpu".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,7 +183,6 @@ mod tests {
         let cfg = AsrConfig::default();
         assert_eq!(cfg.service.audio.sample_rate_hz, 16_000);
         assert_eq!(cfg.service.asr.temperature, 0.0);
-        assert!(cfg.service.alignment.enabled);
         assert_eq!(cfg.server.port, 8080);
     }
 }

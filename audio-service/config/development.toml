@@ -1,0 +1,11 @@
+[server]
+host = "127.0.0.1"
+port = 8081
+tls_enabled = false
+
+[logging]
+level = "debug"
+
+[transformations]
+sample_rate_hz = 16000
+chunk_ms = 500

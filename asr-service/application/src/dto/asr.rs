@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use asr_domain::{Transcript, WordTiming};
+use asr_domain::Transcript;
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct TranscribeAudioRequest {
@@ -19,6 +19,5 @@ pub struct TranscribeAudioRequest {
 pub struct TranscribeAudioResponse {
     pub session_id: String,
     pub transcript: Transcript,
-    pub aligned_words: Vec<WordTiming>,
     pub text: String,
 }

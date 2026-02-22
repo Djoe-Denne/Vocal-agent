@@ -1,0 +1,11 @@
+[server]
+host = "127.0.0.1"
+port = 18080
+tls_enabled = false
+
+[logging]
+level = "warn"
+
+[transformations]
+sample_rate_hz = 16000
+chunk_ms = 500

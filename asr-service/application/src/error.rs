@@ -1,5 +1,5 @@
 use rustycog_command::CommandError;
-use rustycog_core::error::DomainError;
+use asr_domain::DomainError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

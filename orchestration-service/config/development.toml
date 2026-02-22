@@ -1,0 +1,33 @@
+[server]
+host = "127.0.0.1"
+port = 8080
+tls_enabled = false
+
+[logging]
+level = "debug"
+
+
+[queue]
+type = "disabled"
+
+[service.asr]
+model_path = "models/ggml-large-v3-q5_0.bin"
+threads = 6
+
+[service.pipeline]
+selected = "development"
+
+[service.pipeline.definitions.development]
+pre = ["resample", "audio_clamp"]
+transcription = "whisper_transcription"
+post = ["wav2vec2_alignment"]
+
+[service.pipeline.plugins.resample]
+enabled = true
+target_sample_rate_hz = 16000
+
+[service.pipeline.plugins.wav2vec2]
+model_path  = "models/asr-wav2vec2-ctc-french/model.safetensors"
+config_path = "models/asr-wav2vec2-ctc-french/config.json"
+vocab_path  = "models/asr-wav2vec2-ctc-french/vocab.json"
+device="cuda"

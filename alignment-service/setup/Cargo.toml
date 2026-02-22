@@ -1,0 +1,21 @@
+[package]
+name = "alignment-setup"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+default = []
+wav2vec2-cuda = ["alignment-infra-alignment/cuda"]
+
+[dependencies]
+alignment-application = { path = "../application" }
+alignment-configuration = { path = "../configuration" }
+alignment-domain = { path = "../domain" }
+alignment-grpc_server = { path = "../grpc" }
+alignment-infra-alignment = { path = "../infra-alignment" }
+anyhow = { workspace = true }
+rustycog-command = { workspace = true }
+rustycog-config = { workspace = true }
+tracing = { workspace = true }

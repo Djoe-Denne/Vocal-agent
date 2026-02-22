@@ -21,19 +21,3 @@ temperature = 0.0
 threads = 2
 dtw_preset = "base"
 dtw_mem_size = 128
-
-[service.alignment]
-enabled = true
-min_word_duration_ms = 40
-
-[service.pipeline]
-selected = "test"
-
-[service.pipeline.definitions.test]
-pre = ["audio_clamp"]
-transcription = "whisper_transcription"
-post = ["wav2vec2_alignment"]
-
-[service.pipeline.plugins.resample]
-enabled = false
-target_sample_rate_hz = 16000

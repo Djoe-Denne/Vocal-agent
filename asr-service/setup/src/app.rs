@@ -1,13 +1,12 @@
 use anyhow::Error;
-use asr_application::{AsrCommandRegistryFactory, AsrUseCase, AsrUseCaseImpl, PipelineEngine};
+use asr_application::{AsrCommandRegistryFactory, AsrUseCase, AsrUseCaseImpl};
 use asr_configuration::AppConfig;
-use asr_http_server::create_app_routes;
+use asr_domain::TranscriptionPort;
+use asr_grpc_server::serve_grpc;
+use asr_infra_asr_whisper::{WhisperAdapterConfig, WhisperTranscriptionAdapter};
 use rustycog_command::GenericCommandService;
 use rustycog_config::ServerConfig;
-use rustycog_http::{AppState, UserIdExtractor};
 use std::sync::Arc;
-
-use crate::pipeline_loader::PipelinePluginLoader;
 
 pub async fn build_and_run(config: AppConfig, server_config: ServerConfig) -> Result<(), Error> {
     let app = Application::new(config).await?;
@@ -16,7 +15,7 @@ pub async fn build_and_run(config: AppConfig, server_config: ServerConfig) -> Re
 
 pub struct Application {
     pub config: AppConfig,
-    pub state: AppState,
+    pub command_service: Arc<GenericCommandService>,
 }
 
 impl Application {
@@ -41,38 +40,49 @@ impl Application {
         tracing::info!(
             sample_rate_hz = config.service.audio.sample_rate_hz,
             model_path = %config.service.asr.model_path,
-            alignment_enabled = config.service.alignment.enabled,
-            pipeline_selected = config
-                .service
-                .pipeline
-                .as_ref()
-                .map(|pipeline| pipeline.selected.as_str())
-                .unwrap_or("legacy-default"),
             "initializing ASR application"
         );
 
-        let pipeline_loader = PipelinePluginLoader::new(config.clone());
-        let pipeline: PipelineEngine = pipeline_loader.build_engine()?;
+        let transcription: Arc<dyn TranscriptionPort> =
+            Arc::new(WhisperTranscriptionAdapter::new(WhisperAdapterConfig {
+                model_path: config.service.asr.model_path.clone(),
+                language: config.service.asr.default_language.clone(),
+                temperature: config.service.asr.temperature,
+                threads: config.service.asr.threads,
+                dtw_preset: config.service.asr.dtw_preset.clone(),
+                dtw_mem_size: normalize_dtw_mem_size(config.service.asr.dtw_mem_size),
+            }));
         let usecase: Arc<dyn AsrUseCase> = Arc::new(AsrUseCaseImpl::new(
-            pipeline,
+            transcription,
             config.service.audio.sample_rate_hz,
         ));
         let registry = AsrCommandRegistryFactory::create_registry(usecase);
         let command_service = Arc::new(GenericCommandService::new(Arc::new(registry)));
-        let state = AppState::new(command_service, UserIdExtractor::new());
 
-        Ok(Self { config, state })
+        Ok(Self {
+            config,
+            command_service,
+        })
     }
 
     pub async fn run(self, server_config: ServerConfig) -> Result<(), Error> {
         tracing::info!(
             host = %server_config.host,
             port = server_config.port,
-            "starting ASR HTTP routes"
+            "starting ASR gRPC server"
         );
 
-        create_app_routes(self.state, server_config)
+        serve_grpc(self.command_service, server_config)
             .await
             .map_err(|err| anyhow::anyhow!("server startup failed: {err}"))
+    }
+}
+
+fn normalize_dtw_mem_size(raw: usize) -> usize {
+    const ONE_MIB: usize = 1024 * 1024;
+    if raw < ONE_MIB {
+        raw.saturating_mul(ONE_MIB)
+    } else {
+        raw
     }
 }

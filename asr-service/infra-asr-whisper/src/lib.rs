@@ -1,6 +1,6 @@
 use asr_domain::{
-    DomainError, DomainEvent, PipelineContext, PipelineStage, Transcript, TranscriptSegment,
-    TranscriptToken, TranscriptionOutput, TranscriptionPort, TranscriptionRequest,
+    DomainError, Transcript, TranscriptSegment, TranscriptToken, TranscriptionOutput,
+    TranscriptionPort, TranscriptionRequest,
 };
 use async_trait::async_trait;
 #[cfg(feature = "whisper-runtime")]
@@ -259,37 +259,5 @@ impl WhisperTranscriptionAdapter {
     #[cfg(feature = "whisper-runtime")]
     fn to_dtw_preset(&self) -> DtwModelPreset {
         self.config.to_dtw_preset()
-    }
-}
-
-pub struct WhisperTranscriptionStage {
-    adapter: Box<dyn TranscriptionPort>,
-}
-
-impl WhisperTranscriptionStage {
-    pub fn new(adapter: Box<dyn TranscriptionPort>) -> Self {
-        Self { adapter }
-    }
-}
-
-#[async_trait]
-impl PipelineStage for WhisperTranscriptionStage {
-    fn name(&self) -> &'static str {
-        "transcription-whisper"
-    }
-
-    async fn execute(&self, context: &mut PipelineContext) -> Result<(), DomainError> {
-        let output = self
-            .adapter
-            .transcribe(TranscriptionRequest {
-                language_hint: context.language_hint.clone(),
-                audio: context.audio.clone(),
-            })
-            .await?;
-        context.transcript = Some(output.transcript.clone());
-        context.events.push(DomainEvent::FinalTranscript {
-            transcript: output.transcript,
-        });
-        Ok(())
     }
 }

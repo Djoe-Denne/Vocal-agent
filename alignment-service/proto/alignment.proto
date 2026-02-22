@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package alignment.v1;
+
+service AlignmentService {
+  rpc EnrichTranscript(EnrichTranscriptRequest) returns (EnrichTranscriptResponse);
+}
+
+message EnrichTranscriptRequest {
+  repeated float samples = 1;
+  optional uint32 sample_rate_hz = 2;
+  Transcript transcript = 3;
+  optional string session_id = 4;
+}
+
+message EnrichTranscriptResponse {
+  string session_id = 1;
+  Transcript transcript = 2;
+  repeated WordTiming aligned_words = 3;
+  string text = 4;
+}
+
+message Transcript {
+  LanguageTag language = 1;
+  repeated TranscriptSegment segments = 2;
+}
+
+message TranscriptSegment {
+  string text = 1;
+  uint64 start_ms = 2;
+  uint64 end_ms = 3;
+  repeated TranscriptToken tokens = 4;
+}
+
+message TranscriptToken {
+  string text = 1;
+  uint64 start_ms = 2;
+  uint64 end_ms = 3;
+  float confidence = 4;
+}
+
+message WordTiming {
+  string word = 1;
+  uint64 start_ms = 2;
+  uint64 end_ms = 3;
+  float confidence = 4;
+}
+
+message LanguageTag {
+  LanguageTagCode code = 1;
+  optional string other = 2;
+}
+
+enum LanguageTagCode {
+  LANGUAGE_TAG_CODE_UNSPECIFIED = 0;
+  LANGUAGE_TAG_CODE_FR = 1;
+  LANGUAGE_TAG_CODE_EN = 2;
+  LANGUAGE_TAG_CODE_AUTO = 3;
+  LANGUAGE_TAG_CODE_OTHER = 4;
+}

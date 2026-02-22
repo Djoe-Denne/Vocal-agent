@@ -1,10 +1,11 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
-use serde_json::json;
 use uuid::Uuid;
 
-use asr_domain::{DomainEvent, LanguageTag, PipelineContext};
+use asr_domain::{AudioChunk, LanguageTag, TranscriptionPort, TranscriptionRequest};
 
-use crate::{ApplicationError, PipelineEngine, TranscribeAudioRequest, TranscribeAudioResponse};
+use crate::{ApplicationError, TranscribeAudioRequest, TranscribeAudioResponse};
 
 #[async_trait]
 pub trait AsrUseCase: Send + Sync {
@@ -15,14 +16,14 @@ pub trait AsrUseCase: Send + Sync {
 }
 
 pub struct AsrUseCaseImpl {
-    pipeline: PipelineEngine,
+    transcription: Arc<dyn TranscriptionPort>,
     sample_rate_hz: u32,
 }
 
 impl AsrUseCaseImpl {
-    pub fn new(pipeline: PipelineEngine, sample_rate_hz: u32) -> Self {
+    pub fn new(transcription: Arc<dyn TranscriptionPort>, sample_rate_hz: u32) -> Self {
         Self {
-            pipeline,
+            transcription,
             sample_rate_hz,
         }
     }
@@ -34,30 +35,33 @@ impl AsrUseCase for AsrUseCaseImpl {
         &self,
         request: TranscribeAudioRequest,
     ) -> Result<TranscribeAudioResponse, ApplicationError> {
+        let TranscribeAudioRequest {
+            samples,
+            sample_rate_hz,
+            language_hint,
+            session_id,
+        } = request;
         tracing::debug!(
-            sample_count = request.samples.len(),
-            sample_rate_hz = request.sample_rate_hz.unwrap_or(self.sample_rate_hz),
-            language_hint = request.language_hint.as_deref().unwrap_or("auto"),
-            session_id = request.session_id.as_deref().unwrap_or("auto"),
-            "starting asr pipeline"
+            sample_count = samples.len(),
+            sample_rate_hz = sample_rate_hz.unwrap_or(self.sample_rate_hz),
+            language_hint = language_hint.as_deref().unwrap_or("auto"),
+            session_id = session_id.as_deref().unwrap_or("auto"),
+            "starting asr transcription"
         );
 
-        let input_sample_rate_hz = request.sample_rate_hz.unwrap_or(self.sample_rate_hz);
-        let mut context = PipelineContext::new(
-            request
-                .session_id
-                .clone()
-                .unwrap_or_else(|| Uuid::new_v4().to_string()),
-            parse_language_hint(request.language_hint.as_deref())?,
-        );
-        context.audio.sample_rate_hz = input_sample_rate_hz;
-        context.audio.samples = request.samples;
-        context.set_extension("audio.request_sample_rate_hz", json!(input_sample_rate_hz));
-        self.pipeline.run(&mut context).await?;
-
-        let transcript = context.transcript.clone().ok_or_else(|| {
-            ApplicationError::Internal("transcription pipeline returned no transcript".to_string())
-        })?;
+        let input_sample_rate_hz = sample_rate_hz.unwrap_or(self.sample_rate_hz);
+        let session_id = session_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let transcript = self
+            .transcription
+            .transcribe(TranscriptionRequest {
+                language_hint: parse_language_hint(language_hint.as_deref())?,
+                audio: AudioChunk {
+                    sample_rate_hz: input_sample_rate_hz,
+                    samples,
+                },
+            })
+            .await?
+            .transcript;
         let text = transcript
             .segments
             .iter()
@@ -66,18 +70,15 @@ impl AsrUseCase for AsrUseCaseImpl {
             .collect::<Vec<_>>()
             .join(" ");
 
-        let aligned_words = extract_alignment_words(&context);
         let response = TranscribeAudioResponse {
-            session_id: context.session_id,
+            session_id,
             transcript,
-            aligned_words,
             text,
         };
 
         tracing::debug!(
             segment_count = response.transcript.segments.len(),
-            aligned_word_count = response.aligned_words.len(),
-            "asr pipeline completed"
+            "asr transcription completed"
         );
 
         Ok(response)
@@ -101,17 +102,4 @@ fn parse_language_hint(value: Option<&str>) -> Result<Option<LanguageTag>, Appli
         }
     };
     Ok(Some(parsed))
-}
-
-fn extract_alignment_words(context: &PipelineContext) -> Vec<asr_domain::WordTiming> {
-    if !context.aligned_words.is_empty() {
-        return context.aligned_words.clone();
-    }
-
-    for event in &context.events {
-        if let DomainEvent::AlignmentUpdate { words } = event {
-            return words.clone();
-        }
-    }
-    Vec::new()
 }

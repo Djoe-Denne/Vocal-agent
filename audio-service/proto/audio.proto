@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package audio.v1;
+
+service AudioService {
+  rpc TransformAudio(TransformAudioRequest) returns (TransformAudioResponse);
+}
+
+message TransformAudioRequest {
+  repeated float samples = 1;
+  optional uint32 sample_rate_hz = 2;
+  optional uint32 target_sample_rate_hz = 3;
+  optional string session_id = 4;
+}
+
+message TransformAudioResponse {
+  string session_id = 1;
+  repeated float samples = 2;
+  uint32 sample_rate_hz = 3;
+  TransformMetadata metadata = 4;
+}
+
+message TransformMetadata {
+  bool clamped = 1;
+  bool resampled = 2;
+  uint64 input_sample_count = 3;
+  uint64 output_sample_count = 4;
+  uint32 source_sample_rate_hz = 5;
+  uint32 target_sample_rate_hz = 6;
+}

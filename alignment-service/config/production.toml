@@ -1,0 +1,14 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+tls_enabled = false
+
+[logging]
+level = "info"
+
+[alignment]
+sample_rate_hz = 16000
+model_path = "models/wav2vec2-fr.safetensors"
+config_path = "models/wav2vec2-config.json"
+vocab_path = "models/wav2vec2-vocab.json"
+device = "cpu"

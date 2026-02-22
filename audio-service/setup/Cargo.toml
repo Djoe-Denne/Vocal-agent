@@ -1,0 +1,17 @@
+[package]
+name = "audio-setup"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+audio-application = { path = "../application" }
+audio-configuration = { path = "../configuration" }
+audio-domain = { path = "../domain" }
+audio-grpc_server = { path = "../grpc" }
+audio-infra = { path = "../infra" }
+anyhow = { workspace = true }
+rustycog-command = { workspace = true }
+rustycog-config = { workspace = true }
+tracing = { workspace = true }
