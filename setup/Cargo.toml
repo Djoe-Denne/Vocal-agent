@@ -1,0 +1,25 @@
+[package]
+name = "asr-setup"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+default = []
+whisper-runtime = ["asr-infra/whisper-runtime"]
+whisper-cuda = ["whisper-runtime", "asr-infra/whisper-cuda"]
+whisper-vulkan = ["whisper-runtime", "asr-infra/whisper-vulkan"]
+whisper-openblas = ["whisper-runtime", "asr-infra/whisper-openblas"]
+
+[dependencies]
+asr-application = { path = "../application" }
+asr-configuration = { path = "../configuration" }
+asr-domain = { path = "../domain" }
+asr-http_server = { path = "../http" }
+asr-infra = { path = "../infra" }
+anyhow = { workspace = true }
+rustycog-command = { workspace = true }
+rustycog-config = { workspace = true }
+rustycog-http = { workspace = true }
+tracing = { workspace = true }

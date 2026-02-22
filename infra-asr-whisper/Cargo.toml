@@ -1,0 +1,15 @@
+[package]
+name = "asr-infra-asr-whisper"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+asr-domain = { path = "../domain" }
+async-trait = { workspace = true }
+whisper-rs = { workspace = true, optional = true }
+
+[features]
+default = []
+whisper-runtime = ["dep:whisper-rs"]

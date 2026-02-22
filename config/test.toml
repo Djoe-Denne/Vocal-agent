@@ -1,0 +1,48 @@
+[server]
+host = "127.0.0.1"
+port = 18080
+tls_enabled = false
+
+[logging]
+level = "warn"
+
+[database]
+host = "localhost"
+port = 5432
+db = "asr_service_test"
+read_replicas = []
+[database.creds]
+username = "postgres"
+password = "postgres"
+
+[queue]
+type = "disabled"
+
+[service.audio]
+sample_rate_hz = 16000
+chunk_ms = 500
+
+[service.asr]
+model_path = "models/ggml-base.bin"
+default_language = "auto"
+supported_languages = ["fr", "en"]
+temperature = 0.0
+threads = 2
+dtw_preset = "base"
+dtw_mem_size = 128
+
+[service.alignment]
+enabled = true
+min_word_duration_ms = 40
+
+[service.pipeline]
+selected = "test"
+
+[service.pipeline.definitions.test]
+pre = ["audio_clamp"]
+transcription = "whisper_transcription"
+post = ["forced_alignment"]
+
+[service.pipeline.plugins.resample]
+enabled = false
+target_sample_rate_hz = 16000

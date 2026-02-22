@@ -1,0 +1,13 @@
+# Rust build artifacts
+/target/
+
+# rustfmt backup files
+**/*.rs.bk
+
+# rust-analyzer metadata
+.rustc_info.json
+
+models/
+# Keep Cargo.lock for applications/workspaces.
+# Uncomment the next line if this is a library crate.
+# Cargo.lock

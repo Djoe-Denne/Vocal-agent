@@ -1,0 +1,4 @@
+[env]
+# whisper-rs-sys/cmake on Windows may autodetect an invalid future VS generator.
+# Pin to the installed generator for stable local builds.
+CMAKE_GENERATOR = "Visual Studio 17 2022"

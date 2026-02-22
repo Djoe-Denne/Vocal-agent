@@ -1,0 +1,10 @@
+[package]
+name = "asr-infra-audio"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+asr-domain = { path = "../domain" }
+async-trait = { workspace = true }

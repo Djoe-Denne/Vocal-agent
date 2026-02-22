@@ -1,0 +1,42 @@
+[workspace]
+members = [
+    "asr-service",
+    "application",
+    "configuration",
+    "domain",
+    "infra",
+    "http",
+    "setup",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["djden"]
+license = "MIT"
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sea-orm = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+whisper-rs = "0.15"
+validator = { version = "0.20", features = ["derive"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+# RustyCog crates from the shared AIForAll workspace.
+rustycog-config = { path = "../../AIForAll/rustycog/rustycog-config" }
+rustycog-server = { path = "../../AIForAll/rustycog/rustycog-server" }
+rustycog-core = { path = "../../AIForAll/rustycog/rustycog-core" }
+rustycog-logger = { path = "../../AIForAll/rustycog/rustycog-logger" }
+rustycog-command = { path = "../../AIForAll/rustycog/rustycog-command" }
+rustycog-http = { path = "../../AIForAll/rustycog/rustycog-http" }
+rustycog-testing = { path = "../../AIForAll/rustycog/rustycog-testing" }

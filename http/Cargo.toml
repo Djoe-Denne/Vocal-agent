@@ -1,0 +1,17 @@
+[package]
+name = "asr-http_server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+asr-application = { path = "../application" }
+anyhow = { workspace = true }
+axum = { workspace = true }
+rustycog-command = { workspace = true }
+rustycog-config = { workspace = true }
+rustycog-http = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
