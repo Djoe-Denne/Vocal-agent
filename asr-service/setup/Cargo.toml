@@ -7,7 +7,6 @@ license.workspace = true
 
 [features]
 default = []
-whisper-runtime = ["asr-infra-asr-whisper/whisper-runtime"]
 whisper-cuda = ["asr-infra-asr-whisper/whisper-cuda"]
 whisper-vulkan = ["asr-infra-asr-whisper/whisper-vulkan"]
 whisper-openblas = ["asr-infra-asr-whisper/whisper-openblas"]

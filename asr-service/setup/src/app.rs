@@ -20,21 +20,11 @@ pub struct Application {
 
 impl Application {
     pub async fn new(config: AppConfig) -> Result<Self, Error> {
-        #[cfg(feature = "whisper-runtime")]
-        tracing::info!("whisper runtime feature enabled");
-        #[cfg(not(feature = "whisper-runtime"))]
-        tracing::warn!(
-            "service compiled without `whisper-runtime`; transcription will return fallback text"
-        );
         #[cfg(feature = "whisper-cuda")]
         tracing::info!("whisper backend: CUDA");
         #[cfg(feature = "whisper-vulkan")]
         tracing::info!("whisper backend: Vulkan");
-        #[cfg(all(
-            feature = "whisper-runtime",
-            not(feature = "whisper-cuda"),
-            not(feature = "whisper-vulkan")
-        ))]
+        #[cfg(all(not(feature = "whisper-cuda"), not(feature = "whisper-vulkan")))]
         tracing::info!("whisper backend: CPU");
 
         tracing::info!(

@@ -26,6 +26,7 @@ members = [
     "orchestration-service/infra-asr-whisper",
     "orchestration-service/infra-alignment",
     "orchestration-service/setup",
+    "local-run",
 ]
 resolver = "2"
 

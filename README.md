@@ -54,7 +54,7 @@ Useful to verify the toolchain and project layout.
 
 ```powershell
 $env:RUN_ENV="development"
-cargo run -p asr-service --features whisper-runtime
+cargo run -p asr-service
 ```
 
 Requires a Whisper GGML model file at the path set in your config
@@ -64,7 +64,7 @@ Requires a Whisper GGML model file at the path set in your config
 
 ```powershell
 $env:RUN_ENV="development"
-cargo run -p asr-service --features whisper-runtime,wav2vec2-runtime
+cargo run -p asr-service --features wav2vec2-runtime
 ```
 
 Requires three files for the Wav2Vec2 model (defaults shown):
@@ -93,14 +93,13 @@ Combine features as needed with `--features flag1,flag2`.
 
 | Feature | What it enables |
 |---|---|
-| `whisper-runtime` | Whisper transcription (CPU) |
-| `whisper-cuda` | Whisper + NVIDIA CUDA backend |
-| `whisper-vulkan` | Whisper + Vulkan backend |
-| `whisper-openblas` | Whisper + OpenBLAS backend |
+| `whisper-cuda` | Whisper transcription + NVIDIA CUDA backend |
+| `whisper-vulkan` | Whisper transcription + Vulkan backend |
+| `whisper-openblas` | Whisper transcription + OpenBLAS backend |
 | `wav2vec2-runtime` | Wav2Vec2 CTC forced alignment (CPU) |
 | `wav2vec2-cuda` | Wav2Vec2 + CUDA tensor backend |
 
-Without any features the service compiles but returns placeholder responses.
+Whisper transcription is always enabled; extra Whisper features only select backend/runtime acceleration.
 
 ---
 
@@ -134,7 +133,7 @@ target_sample_rate_hz = 16000
 |---|---|---|
 | `audio_clamp` | *(always available)* | `infra-audio` |
 | `resample` | *(always available)* | `infra-audio` |
-| `whisper_transcription` | `whisper-runtime` | `infra-asr-whisper` |
+| `whisper_transcription` | *(always available)* | `infra-asr-whisper` |
 | `wav2vec2_alignment` | `wav2vec2-runtime` | `infra-alignment` |
 
 ---

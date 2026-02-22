@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wav", required=True, help="Path to input .wav file")
     parser.add_argument(
         "--endpoint",
-        default="http://127.0.0.1:8080/api/asr/transcribe",
+        default="http://127.0.0.1:8090/api/asr/transcribe",
         help="Transcribe endpoint URL",
     )
     parser.add_argument(
