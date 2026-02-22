@@ -6,25 +6,13 @@ tls_enabled = false
 [logging]
 level = "debug"
 
+
 [queue]
 type = "disabled"
 
-[service.audio]
-sample_rate_hz = 16000
-chunk_ms = 500
-
 [service.asr]
-model_path = "models/ggml-small.bin"
-default_language = "auto"
-supported_languages = ["fr", "en"]
-temperature = 0.0
+model_path = "models/ggml-large-v3-q5_0.bin"
 threads = 6
-dtw_preset = "base"
-dtw_mem_size = 128
-
-[service.alignment]
-enabled = true
-min_word_duration_ms = 40
 
 [service.pipeline]
 selected = "development"
@@ -37,3 +25,9 @@ post = ["wav2vec2_alignment"]
 [service.pipeline.plugins.resample]
 enabled = true
 target_sample_rate_hz = 16000
+
+[service.pipeline.plugins.wav2vec2]
+model_path  = "models/asr-wav2vec2-ctc-french/model.safetensors"
+config_path = "models/asr-wav2vec2-ctc-french/config.json"
+vocab_path  = "models/asr-wav2vec2-ctc-french/vocab.json"
+device="cuda"

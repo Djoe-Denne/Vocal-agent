@@ -1,5 +1,5 @@
 # Rust build artifacts
-/target/
+target/
 
 # rustfmt backup files
 **/*.rs.bk
@@ -8,6 +8,7 @@
 .rustc_info.json
 
 models/
+*.wav
 # Keep Cargo.lock for applications/workspaces.
 # Uncomment the next line if this is a library crate.
 # Cargo.lock

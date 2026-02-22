@@ -1,0 +1,34 @@
+[package]
+name = "asr-service"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[features]
+default = []
+whisper-runtime = ["asr-setup/whisper-runtime"]
+whisper-cuda = ["whisper-runtime", "asr-setup/whisper-cuda"]
+whisper-vulkan = ["whisper-runtime", "asr-setup/whisper-vulkan"]
+whisper-openblas = ["whisper-runtime", "asr-setup/whisper-openblas"]
+wav2vec2-runtime = ["asr-setup/wav2vec2-runtime"]
+wav2vec2-cuda = ["wav2vec2-runtime", "asr-setup/wav2vec2-cuda"]
+
+[dependencies]
+asr-configuration = { path = "../configuration" }
+asr-setup = { path = "../setup" }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+
+[[bin]]
+name = "asr-service"
+path = "src/main.rs"
+
+[dev-dependencies]
+async-trait = { workspace = true }
+reqwest = { workspace = true }
+rustycog-config = { workspace = true }
+rustycog-testing = { workspace = true }
+sea-orm = { workspace = true }
+serde_json = { workspace = true }

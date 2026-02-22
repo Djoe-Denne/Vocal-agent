@@ -1,34 +1,48 @@
-[package]
-name = "asr-service"
-version.workspace = true
-edition.workspace = true
-authors.workspace = true
-license.workspace = true
+[workspace]
+members = [
+    "asr-service",
+    "application",
+    "configuration",
+    "domain",
+    "infra-alignment",
+    "infra-audio",
+    "infra-asr-whisper",
+    "http",
+    "setup",
+]
+resolver = "2"
 
-[features]
-default = []
-whisper-runtime = ["asr-setup/whisper-runtime"]
-whisper-cuda = ["whisper-runtime", "asr-setup/whisper-cuda"]
-whisper-vulkan = ["whisper-runtime", "asr-setup/whisper-vulkan"]
-whisper-openblas = ["whisper-runtime", "asr-setup/whisper-openblas"]
-wav2vec2-runtime = ["asr-setup/wav2vec2-runtime"]
-wav2vec2-cuda = ["wav2vec2-runtime", "asr-setup/wav2vec2-cuda"]
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["djden"]
+license = "MIT"
 
-[dependencies]
-asr-configuration = { path = "../configuration" }
-asr-setup = { path = "../setup" }
-anyhow = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+axum = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sea-orm = "1"
+thiserror = "2"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "signal", "time"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1", features = ["v4", "serde"] }
+candle-core = "0.9.2"
+candle-nn = "0.9.2"
+candle-transformers = "0.9.2"
+safetensors = "0.7.0"
+whisper-rs = "0.15"
+validator = { version = "0.20", features = ["derive"] }
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
 
-[[bin]]
-name = "asr-service"
-path = "src/main.rs"
-
-[dev-dependencies]
-async-trait = { workspace = true }
-reqwest = { workspace = true }
-rustycog-config = { workspace = true }
-rustycog-testing = { workspace = true }
-sea-orm = { workspace = true }
-serde_json = { workspace = true }
+# RustyCog crates from the shared AIForAll workspace.
+rustycog-config = { path = "../../AIForAll/rustycog/rustycog-config" }
+rustycog-server = { path = "../../AIForAll/rustycog/rustycog-server" }
+rustycog-core = { path = "../../AIForAll/rustycog/rustycog-core" }
+rustycog-logger = { path = "../../AIForAll/rustycog/rustycog-logger" }
+rustycog-command = { path = "../../AIForAll/rustycog/rustycog-command" }
+rustycog-http = { path = "../../AIForAll/rustycog/rustycog-http" }
+rustycog-testing = { path = "../../AIForAll/rustycog/rustycog-testing" }
