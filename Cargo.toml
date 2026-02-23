@@ -18,6 +18,7 @@ members = [
     "alignment-service/grpc",
     "alignment-service/infra-alignment",
     "alignment-service/setup",
+    "wav2vec2-rs",
     "orchestration-service/application",
     "orchestration-service/configuration",
     "orchestration-service/domain",

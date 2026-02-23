@@ -83,12 +83,7 @@ version = "0.1.0"
 dependencies = [
  "alignment-domain",
  "async-trait",
- "candle-core",
- "candle-nn",
- "safetensors 0.7.0",
- "serde",
- "serde_json",
- "tracing",
+ "wav2vec2-rs",
 ]
 
 [[package]]
@@ -4448,6 +4443,19 @@ dependencies = [
  "hashbrown 0.15.5",
  "indexmap",
  "semver",
+]
+
+[[package]]
+name = "wav2vec2-rs"
+version = "0.1.0"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "safetensors 0.7.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
 ]
 
 [[package]]

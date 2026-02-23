@@ -8,13 +8,8 @@ license.workspace = true
 [dependencies]
 alignment-domain = { path = "../domain" }
 async-trait = { workspace = true }
-candle-core = { workspace = true }
-candle-nn = { workspace = true }
-safetensors = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-tracing = { workspace = true }
+wav2vec2-rs = { path = "../../wav2vec2-rs" }
 
 [features]
 default = []
-cuda = ["candle-core/cuda"]
+cuda = ["wav2vec2-rs/cuda"]

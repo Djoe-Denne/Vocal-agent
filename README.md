@@ -19,8 +19,10 @@ asr-service          (binary entry point, feature flags)
 ├── http             (Axum HTTP handlers)
 ├── infra-audio      (audio preprocessing: clamp, resample)
 ├── infra-asr-whisper (Whisper transcription adapter + pipeline stage)
-└── infra-alignment  (Wav2Vec2 CTC forced aligner + pipeline stage)
+└── infra-alignment  (Wav2Vec2 alignment adapter + pipeline stage)
 ```
+
+Wav2Vec2 model and forced-alignment internals now live in the standalone `wav2vec2-rs` crate, while service infra crates only wrap them behind ports/adapters.
 
 Each runtime capability is its own crate, gated behind a Cargo feature flag.
 Nothing compiles unless you opt in.

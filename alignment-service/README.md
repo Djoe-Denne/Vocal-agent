@@ -28,7 +28,7 @@ alignment-service
 ├── domain           (alignment entities + port trait)
 ├── grpc             (tonic server + generated client/service stubs)
 ├── proto            (protobuf service contract)
-└── infra-alignment  (Wav2Vec2 forced aligner adapter)
+└── infra-alignment  (AlignmentPort adapter delegating to `wav2vec2-rs`)
 ```
 
 ## Build
