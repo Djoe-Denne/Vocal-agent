@@ -64,7 +64,11 @@ fn run() -> Result<(), String> {
             package: "alignment-setup",
             bin: "alignment-service",
             working_dir: "alignment-service",
-            feature: if use_cuda { Some("wav2vec2-cuda") } else { None },
+            feature: if use_cuda {
+                Some("wav2vec2-onnx-wgpu-bp")
+            } else {
+                None
+            },
         },
         ServiceSpec {
             name: "orchestration-service",

@@ -2,7 +2,10 @@ use alignment_domain::{
     AlignmentOutput, AlignmentPort, AlignmentRequest, DomainError, WordTiming,
 };
 use async_trait::async_trait;
-use wav2vec2_rs::{AlignmentError, AlignmentInput, Wav2Vec2Aligner, Wav2Vec2Config};
+use wav2vec2_rs::{
+    AlignmentError, AlignmentInput, ForcedAligner as CoreForcedAligner, ForcedAlignerBuilder,
+    RuntimeKind, Wav2Vec2Config,
+};
 
 #[derive(Debug, Clone)]
 pub struct Wav2Vec2AdapterConfig {
@@ -13,7 +16,7 @@ pub struct Wav2Vec2AdapterConfig {
 }
 
 pub struct Wav2Vec2ForcedAligner {
-    aligner: Wav2Vec2Aligner,
+    aligner: CoreForcedAligner,
 }
 
 impl Wav2Vec2ForcedAligner {
@@ -26,7 +29,10 @@ impl Wav2Vec2ForcedAligner {
             expected_sample_rate_hz: Wav2Vec2Config::DEFAULT_SAMPLE_RATE_HZ,
         };
 
-        let aligner = Wav2Vec2Aligner::load(&core_cfg).map_err(Self::map_error)?;
+        let aligner = ForcedAlignerBuilder::new(core_cfg)
+            .with_runtime_kind(RuntimeKind::Onnx)
+            .build()
+            .map_err(Self::map_error)?;
         Ok(Self { aligner })
     }
 
@@ -56,6 +62,7 @@ impl AlignmentPort for Wav2Vec2ForcedAligner {
                 sample_rate_hz: request.audio.sample_rate_hz,
                 samples: request.audio.samples,
                 transcript: transcript_text,
+                normalized: None,
             })
             .map_err(Self::map_error)?;
 
@@ -67,7 +74,7 @@ impl AlignmentPort for Wav2Vec2ForcedAligner {
                     word: word.word,
                     start_ms: word.start_ms,
                     end_ms: word.end_ms,
-                    confidence: word.confidence,
+                    confidence: word.confidence.unwrap_or(0.0),
                 })
                 .collect(),
         })

@@ -8,8 +8,12 @@ license.workspace = true
 [dependencies]
 alignment-domain = { path = "../domain" }
 async-trait = { workspace = true }
-wav2vec2-rs = { path = "../../wav2vec2-rs" }
+wav2vec2-rs = { workspace = true }
 
 [features]
-default = []
-cuda = ["wav2vec2-rs/cuda"]
+default = ["onnx"]
+onnx = ["wav2vec2-rs/onnx"]
+wgpu-dp = ["wav2vec2-rs/wgpu-dp"]
+cuda-dp = ["wav2vec2-rs/cuda-dp"]
+# ONNX inference on CUDA + BP/DP on WGPU.
+onnx-wgpu-bp = ["onnx", "wgpu-dp"]
