@@ -2555,7 +2555,6 @@ version = "2.0.0-rc.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5df903c0d2c07b56950f1058104ab0c8557159f2741782223704de9be73c3c"
 dependencies = [
- "libloading 0.9.0",
  "ndarray",
  "ort-sys",
  "smallvec",
@@ -4726,8 +4725,6 @@ dependencies = [
 [[package]]
 name = "wav2vec2-rs"
 version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6678ad50ef2670c9cfae98f06fb2d6d1a8b19a53f1d5cddeb1eac664aab24bc"
 dependencies = [
  "bytemuck",
  "candle-core",
