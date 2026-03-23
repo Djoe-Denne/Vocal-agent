@@ -1,15 +1,13 @@
 [package]
-name = "orchestration-infra"
+name = "tempo-infra-tempo"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-orchestration-domain = { path = "../domain" }
+tempo-domain = { path = "../domain" }
 async-trait = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

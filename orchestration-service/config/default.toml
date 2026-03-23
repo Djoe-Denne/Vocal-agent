@@ -45,10 +45,27 @@ request_timeout_ms = 60000
 max_decoding_message_bytes = 67108864
 max_encoding_message_bytes = 67108864
 
+[service.tempo]
+host = "127.0.0.1"
+port = 8085
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 30000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
 [service.pipeline]
 selected = "default"
 
 [service.pipeline.definitions.default]
 pre = ["audio_transform"]
 transcription = "asr_transcribe"
-post = ["alignment_enrich", "tts_synthesize"]
+post = [
+  "alignment_enrich",
+  "snapshot_original_timings",
+  "tts_synthesize",
+  "swap_tts_audio",
+  "asr_transcribe_tts",
+  "alignment_enrich_tts",
+  "tempo_match"
+]

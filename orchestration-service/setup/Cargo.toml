@@ -5,28 +5,24 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
-[features]
-default = ["tts-rest"]
-tts-grpc = ["dep:orchestration-infra-tts", "dep:tts-grpc_server"]
-tts-rest = ["dep:orchestration-infra-tts-rest"]
-
 [dependencies]
 orchestration-application = { path = "../application" }
 orchestration-configuration = { path = "../configuration" }
 orchestration-domain = { path = "../domain" }
 orchestration-http_server = { path = "../http" }
+orchestration-infra = { path = "../infra" }
 orchestration-infra-audio = { path = "../infra-audio" }
 orchestration-infra-asr = { path = "../infra-asr-whisper" }
 orchestration-infra-alignment = { path = "../infra-alignment" }
-orchestration-infra-tts = { path = "../infra-tts", optional = true }
-orchestration-infra-tts-rest = { path = "../infra-tts-rest", optional = true }
+orchestration-infra-tts-rest = { path = "../infra-tts-rest" }
+orchestration-infra-tempo = { path = "../infra-tempo" }
 anyhow = { workspace = true }
 rustycog-command = { workspace = true }
 rustycog-config = { workspace = true }
 rustycog-http = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tts-grpc_server = { path = "../../tts-service/grpc", optional = true }
+tempo-grpc_server = { path = "../../tempo-service/grpc" }
 
 [dev-dependencies]
 alignment-grpc_server = { path = "../../alignment-service/grpc" }

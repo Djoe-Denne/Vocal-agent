@@ -1,5 +1,5 @@
 [package]
-name = "orchestration-infra"
+name = "orchestration-infra-tempo"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -7,10 +7,9 @@ license.workspace = true
 
 [dependencies]
 orchestration-domain = { path = "../domain" }
+tempo-grpc_server = { path = "../../tempo-service/grpc" }
 async-trait = { workspace = true }
-serde = { workspace = true }
 serde_json = { workspace = true }
-tracing = { workspace = true }
-
-[dev-dependencies]
 tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }

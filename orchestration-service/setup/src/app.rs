@@ -8,22 +8,17 @@ use orchestration_application::{
 use orchestration_configuration::{AppConfig, GrpcEndpointConfig, PipelineDefinitionConfig};
 use orchestration_domain::{DomainError, PipelineStage};
 use orchestration_http_server::create_app_routes;
+use orchestration_infra::DiagnosticDumpStage;
+use orchestration_infra::SnapshotOriginalTimingsStage;
+use orchestration_infra::SwapTtsAudioStage;
 use orchestration_infra_alignment::{connect_alignment_client, AlignmentEnrichStage};
 use orchestration_infra_asr::{connect_asr_client, AsrTranscribeStage};
 use orchestration_infra_audio::{connect_audio_client, AudioTransformStage};
+use orchestration_infra_tempo::{connect_tempo_client, TempoMatchStage};
+use orchestration_infra_tts_rest::TtsRestSynthesizeStage;
 use rustycog_command::GenericCommandService;
 use rustycog_config::ServerConfig;
 use rustycog_http::{AppState, UserIdExtractor};
-
-#[cfg(feature = "tts-grpc")]
-use orchestration_infra_tts::{connect_tts_client, TtsSynthesizeStage};
-#[cfg(feature = "tts-rest")]
-use orchestration_infra_tts_rest::TtsRestSynthesizeStage;
-
-#[cfg(all(feature = "tts-grpc", feature = "tts-rest"))]
-compile_error!("features `tts-grpc` and `tts-rest` are mutually exclusive");
-#[cfg(not(any(feature = "tts-grpc", feature = "tts-rest")))]
-compile_error!("one of `tts-grpc` or `tts-rest` must be enabled");
 
 pub async fn build_and_run(config: AppConfig, server_config: ServerConfig) -> Result<(), Error> {
     let app = Application::new(config).await?;
@@ -89,12 +84,51 @@ impl Application {
             alignment_client,
             request_timeout(&config.service.alignment),
         ));
-        let tts_stage: Arc<dyn PipelineStage> = build_tts_stage(&config).await?;
+        let tts_stage: Arc<dyn PipelineStage> = Arc::new(TtsRestSynthesizeStage::new(
+            format!("{}/v1/audio/speech", grpc_endpoint_uri(&config.service.tts)),
+            request_timeout(&config.service.tts),
+        ));
+        let snapshot_stage: Arc<dyn PipelineStage> =
+            Arc::new(SnapshotOriginalTimingsStage::new());
+        let swap_stage: Arc<dyn PipelineStage> = Arc::new(SwapTtsAudioStage::new());
+        let dump_dir = std::path::PathBuf::from("./debug-dumps");
+        let dump_original: Arc<dyn PipelineStage> =
+            Arc::new(DiagnosticDumpStage::new("01_original", &dump_dir));
+        let dump_tts_audio: Arc<dyn PipelineStage> =
+            Arc::new(DiagnosticDumpStage::new("02_tts_audio", &dump_dir));
+        let dump_tts_aligned: Arc<dyn PipelineStage> =
+            Arc::new(DiagnosticDumpStage::new("03_tts_aligned", &dump_dir));
+        let dump_tempo_result: Arc<dyn PipelineStage> =
+            Arc::new(DiagnosticDumpStage::new("04_tempo_result", &dump_dir));
+        let dump_final: Arc<dyn PipelineStage> =
+            Arc::new(DiagnosticDumpStage::new("05_final", &dump_dir));
+        let tempo_client = connect_with_retry("tempo", || async {
+            connect_tempo_client(
+                &grpc_endpoint_uri(&config.service.tempo),
+                connect_timeout(&config.service.tempo),
+                config.service.tempo.max_decoding_message_bytes,
+                config.service.tempo.max_encoding_message_bytes,
+            )
+            .await
+        })
+        .await?;
+        let tempo_stage: Arc<dyn PipelineStage> = Arc::new(TempoMatchStage::new(
+            tempo_client,
+            request_timeout(&config.service.tempo),
+        ));
         let loader = GrpcPipelineStepLoader {
             audio_transform: audio_stage,
             asr_transcribe: asr_stage,
             alignment_enrich: alignment_stage,
             tts_synthesize: tts_stage,
+            snapshot_original_timings: snapshot_stage,
+            swap_tts_audio: swap_stage,
+            tempo_match: tempo_stage,
+            dump_original,
+            dump_tts_audio,
+            dump_tts_aligned,
+            dump_tempo_result,
+            dump_final,
         };
         let pipeline = PipelineEngine::from_definition(&pipeline_definition, &loader)?;
 
@@ -113,46 +147,40 @@ impl Application {
     }
 }
 
-#[cfg(feature = "tts-grpc")]
-async fn build_tts_stage(config: &AppConfig) -> Result<Arc<dyn PipelineStage>, Error> {
-    let tts_client = connect_with_retry("tts", || async {
-        connect_tts_client(
-            &grpc_endpoint_uri(&config.service.tts),
-            connect_timeout(&config.service.tts),
-            config.service.tts.max_decoding_message_bytes,
-            config.service.tts.max_encoding_message_bytes,
-        )
-        .await
-    })
-    .await?;
-    Ok(Arc::new(TtsSynthesizeStage::new(
-        tts_client,
-        request_timeout(&config.service.tts),
-    )))
-}
-
-#[cfg(feature = "tts-rest")]
-async fn build_tts_stage(config: &AppConfig) -> Result<Arc<dyn PipelineStage>, Error> {
-    Ok(Arc::new(TtsRestSynthesizeStage::new(
-        format!("{}/v1/audio/speech", grpc_endpoint_uri(&config.service.tts)),
-        request_timeout(&config.service.tts),
-    )))
-}
-
 struct GrpcPipelineStepLoader {
     audio_transform: Arc<dyn PipelineStage>,
     asr_transcribe: Arc<dyn PipelineStage>,
     alignment_enrich: Arc<dyn PipelineStage>,
     tts_synthesize: Arc<dyn PipelineStage>,
+    snapshot_original_timings: Arc<dyn PipelineStage>,
+    swap_tts_audio: Arc<dyn PipelineStage>,
+    tempo_match: Arc<dyn PipelineStage>,
+    dump_original: Arc<dyn PipelineStage>,
+    dump_tts_audio: Arc<dyn PipelineStage>,
+    dump_tts_aligned: Arc<dyn PipelineStage>,
+    dump_tempo_result: Arc<dyn PipelineStage>,
+    dump_final: Arc<dyn PipelineStage>,
 }
 
 impl PipelineStepLoader for GrpcPipelineStepLoader {
     fn load_step(&self, step: &PipelineStepSpec) -> Result<Arc<dyn PipelineStage>, DomainError> {
         match step.name.as_str() {
             "audio_transform" => Ok(self.audio_transform.clone()),
-            "asr_transcribe" => Ok(self.asr_transcribe.clone()),
-            "alignment_enrich" => Ok(self.alignment_enrich.clone()),
+            "asr_transcribe" | "asr_transcribe_tts" | "asr_transcribe_result" => {
+                Ok(self.asr_transcribe.clone())
+            }
+            "alignment_enrich" | "alignment_enrich_tts" | "alignment_enrich_result" => {
+                Ok(self.alignment_enrich.clone())
+            }
             "tts_synthesize" => Ok(self.tts_synthesize.clone()),
+            "snapshot_original_timings" => Ok(self.snapshot_original_timings.clone()),
+            "swap_tts_audio" => Ok(self.swap_tts_audio.clone()),
+            "tempo_match" => Ok(self.tempo_match.clone()),
+            "dump_original" => Ok(self.dump_original.clone()),
+            "dump_tts_audio" => Ok(self.dump_tts_audio.clone()),
+            "dump_tts_aligned" => Ok(self.dump_tts_aligned.clone()),
+            "dump_tempo_result" => Ok(self.dump_tempo_result.clone()),
+            "dump_final" => Ok(self.dump_final.clone()),
             _ => Err(DomainError::internal_error(&format!(
                 "unknown pipeline step `{}`",
                 step.name
@@ -215,161 +243,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "tts-grpc")]
-    use std::net::{SocketAddr, TcpListener};
-
-    #[cfg(feature = "tts-grpc")]
-    use alignment_grpc_server::pb as alignment_pb;
-    #[cfg(feature = "tts-grpc")]
-    use asr_grpc_server::pb as asr_pb;
-    #[cfg(feature = "tts-grpc")]
-    use audio_grpc_server::pb as audio_pb;
-    #[cfg(feature = "tts-grpc")]
-    use orchestration_application::{TranscribeAudioCommand, TranscribeAudioRequest};
     use orchestration_configuration::{PipelineDefinitionConfig, PipelineStepRef};
-    #[cfg(feature = "tts-grpc")]
-    use rustycog_command::CommandContext;
-    #[cfg(feature = "tts-grpc")]
-    use tts_grpc_server::pb as tts_pb;
-    #[cfg(feature = "tts-grpc")]
-    use tonic::{transport::Server, Request, Response, Status};
 
     use super::*;
-
-    #[cfg(feature = "tts-grpc")]
-    struct MockAudioService;
-
-    #[cfg(feature = "tts-grpc")]
-    #[tonic::async_trait]
-    impl audio_pb::audio_service_server::AudioService for MockAudioService {
-        async fn transform_audio(
-            &self,
-            request: Request<audio_pb::TransformAudioRequest>,
-        ) -> Result<Response<audio_pb::TransformAudioResponse>, Status> {
-            let request = request.into_inner();
-            Ok(Response::new(audio_pb::TransformAudioResponse {
-                session_id: request
-                    .session_id
-                    .unwrap_or_else(|| "generated-audio-session".to_string()),
-                samples: request.samples,
-                sample_rate_hz: request.target_sample_rate_hz.unwrap_or(
-                    request.sample_rate_hz.unwrap_or(16_000),
-                ),
-                metadata: Some(audio_pb::TransformMetadata {
-                    clamped: false,
-                    resampled: request.target_sample_rate_hz.is_some(),
-                    input_sample_count: 3,
-                    output_sample_count: 3,
-                    source_sample_rate_hz: request.sample_rate_hz.unwrap_or(16_000),
-                    target_sample_rate_hz: request
-                        .target_sample_rate_hz
-                        .unwrap_or(request.sample_rate_hz.unwrap_or(16_000)),
-                }),
-            }))
-        }
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    struct MockAsrService;
-
-    #[cfg(feature = "tts-grpc")]
-    #[tonic::async_trait]
-    impl asr_pb::asr_service_server::AsrService for MockAsrService {
-        async fn transcribe(
-            &self,
-            request: Request<asr_pb::TranscribeAudioRequest>,
-        ) -> Result<Response<asr_pb::TranscribeAudioResponse>, Status> {
-            let request = request.into_inner();
-            Ok(Response::new(asr_pb::TranscribeAudioResponse {
-                session_id: request
-                    .session_id
-                    .unwrap_or_else(|| "generated-asr-session".to_string()),
-                transcript: Some(asr_pb::Transcript {
-                    language: Some(asr_pb::LanguageTag {
-                        code: 2,
-                        other: None,
-                    }),
-                    segments: vec![asr_pb::TranscriptSegment {
-                        text: "hello world".to_string(),
-                        start_ms: 0,
-                        end_ms: 250,
-                        tokens: vec![asr_pb::TranscriptToken {
-                            text: "hello".to_string(),
-                            start_ms: 0,
-                            end_ms: 120,
-                            confidence: 0.97,
-                        }],
-                    }],
-                }),
-                text: "hello world".to_string(),
-            }))
-        }
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    struct MockAlignmentService;
-
-    #[cfg(feature = "tts-grpc")]
-    #[tonic::async_trait]
-    impl alignment_pb::alignment_service_server::AlignmentService for MockAlignmentService {
-        async fn enrich_transcript(
-            &self,
-            request: Request<alignment_pb::EnrichTranscriptRequest>,
-        ) -> Result<Response<alignment_pb::EnrichTranscriptResponse>, Status> {
-            let request = request.into_inner();
-            let transcript = request
-                .transcript
-                .ok_or_else(|| Status::invalid_argument("transcript is required"))?;
-            Ok(Response::new(alignment_pb::EnrichTranscriptResponse {
-                session_id: request
-                    .session_id
-                    .unwrap_or_else(|| "generated-alignment-session".to_string()),
-                transcript: Some(transcript),
-                aligned_words: vec![alignment_pb::WordTiming {
-                    word: "hello".to_string(),
-                    start_ms: 0,
-                    end_ms: 120,
-                    confidence: 0.95,
-                }],
-                text: "hello world".to_string(),
-            }))
-        }
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    struct MockTtsService;
-
-    #[cfg(feature = "tts-grpc")]
-    #[tonic::async_trait]
-    impl tts_pb::tts_service_server::TtsService for MockTtsService {
-        async fn synthesize_audio(
-            &self,
-            request: Request<tts_pb::SynthesizeAudioRequest>,
-        ) -> Result<Response<tts_pb::SynthesizeAudioResponse>, Status> {
-            let request = request.into_inner();
-            let transcript = request
-                .transcript
-                .ok_or_else(|| Status::invalid_argument("transcript is required"))?;
-            let total_samples = transcript.total_duration_ms as usize * 22_050 / 1000;
-            Ok(Response::new(tts_pb::SynthesizeAudioResponse {
-                session_id: request
-                    .session_id
-                    .unwrap_or_else(|| "generated-tts-session".to_string()),
-                samples: vec![0.0; total_samples.max(1)],
-                sample_rate_hz: 22_050,
-                word_timings: transcript
-                    .words
-                    .into_iter()
-                    .map(|word| tts_pb::SynthesizedWordTiming {
-                        text: word.text,
-                        start_ms: word.start_ms,
-                        end_ms: word.end_ms,
-                        fit_strategy: "natural".to_string(),
-                    })
-                    .collect(),
-            }))
-        }
-    }
 
     struct FakeStage {
         id: &'static str,
@@ -381,7 +257,10 @@ mod tests {
             self.id
         }
 
-        async fn execute(&self, _context: &mut orchestration_domain::PipelineContext) -> Result<(), DomainError> {
+        async fn execute(
+            &self,
+            _context: &mut orchestration_domain::PipelineContext,
+        ) -> Result<(), DomainError> {
             Ok(())
         }
     }
@@ -406,165 +285,111 @@ mod tests {
         assert_eq!(ordered[3].name, "tts_synthesize");
     }
 
+    fn make_fake_stage(id: &'static str) -> Arc<dyn PipelineStage> {
+        Arc::new(FakeStage { id })
+    }
+
+    fn make_test_loader() -> GrpcPipelineStepLoader {
+        GrpcPipelineStepLoader {
+            audio_transform: make_fake_stage("audio_transform"),
+            asr_transcribe: make_fake_stage("asr_transcribe"),
+            alignment_enrich: make_fake_stage("alignment_enrich"),
+            tts_synthesize: make_fake_stage("tts_synthesize"),
+            snapshot_original_timings: make_fake_stage("snapshot_original_timings"),
+            swap_tts_audio: make_fake_stage("swap_tts_audio"),
+            tempo_match: make_fake_stage("tempo_match"),
+            dump_original: make_fake_stage("diagnostic_dump"),
+            dump_tts_audio: make_fake_stage("diagnostic_dump"),
+            dump_tts_aligned: make_fake_stage("diagnostic_dump"),
+            dump_tempo_result: make_fake_stage("diagnostic_dump"),
+            dump_final: make_fake_stage("diagnostic_dump"),
+        }
+    }
+
     #[test]
     fn loader_maps_remote_step_names() {
-        let loader = GrpcPipelineStepLoader {
-            audio_transform: Arc::new(FakeStage {
-                id: "audio_transform",
-            }),
-            asr_transcribe: Arc::new(FakeStage {
-                id: "asr_transcribe",
-            }),
-            alignment_enrich: Arc::new(FakeStage {
-                id: "alignment_enrich",
-            }),
-            tts_synthesize: Arc::new(FakeStage {
-                id: "tts_synthesize",
-            }),
-        };
+        let loader = make_test_loader();
 
-        let audio = loader
-            .load_step(&PipelineStepSpec::new("audio_transform"))
-            .expect("audio stage should exist");
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("audio_transform"))
+                .unwrap()
+                .name(),
+            "audio_transform"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("asr_transcribe"))
+                .unwrap()
+                .name(),
+            "asr_transcribe"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("alignment_enrich"))
+                .unwrap()
+                .name(),
+            "alignment_enrich"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("tts_synthesize"))
+                .unwrap()
+                .name(),
+            "tts_synthesize"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("snapshot_original_timings"))
+                .unwrap()
+                .name(),
+            "snapshot_original_timings"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("swap_tts_audio"))
+                .unwrap()
+                .name(),
+            "swap_tts_audio"
+        );
+        assert_eq!(
+            loader
+                .load_step(&PipelineStepSpec::new("tempo_match"))
+                .unwrap()
+                .name(),
+            "tempo_match"
+        );
+        assert!(loader
+            .load_step(&PipelineStepSpec::new("unknown_step"))
+            .is_err());
+    }
+
+    #[test]
+    fn loader_aliases_reuse_same_stage() {
+        let loader = make_test_loader();
+
         let asr = loader
             .load_step(&PipelineStepSpec::new("asr_transcribe"))
-            .expect("asr stage should exist");
-        let alignment = loader
+            .unwrap();
+        let asr_tts = loader
+            .load_step(&PipelineStepSpec::new("asr_transcribe_tts"))
+            .unwrap();
+        assert!(Arc::ptr_eq(&asr, &asr_tts));
+        let asr_result = loader
+            .load_step(&PipelineStepSpec::new("asr_transcribe_result"))
+            .unwrap();
+        assert!(Arc::ptr_eq(&asr, &asr_result));
+
+        let align = loader
             .load_step(&PipelineStepSpec::new("alignment_enrich"))
-            .expect("alignment stage should exist");
-        let tts = loader
-            .load_step(&PipelineStepSpec::new("tts_synthesize"))
-            .expect("tts stage should exist");
-
-        assert_eq!(audio.name(), "audio_transform");
-        assert_eq!(asr.name(), "asr_transcribe");
-        assert_eq!(alignment.name(), "alignment_enrich");
-        assert_eq!(tts.name(), "tts_synthesize");
-        assert!(loader.load_step(&PipelineStepSpec::new("unknown_step")).is_err());
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    #[tokio::test]
-    async fn command_flow_orchestrates_remote_stages() {
-        let audio_port = pick_free_port();
-        let asr_port = pick_free_port();
-        let alignment_port = pick_free_port();
-        let tts_port = pick_free_port();
-
-        let audio_server = tokio::spawn(start_audio_server(audio_port));
-        let asr_server = tokio::spawn(start_asr_server(asr_port));
-        let alignment_server = tokio::spawn(start_alignment_server(alignment_port));
-        let tts_server = tokio::spawn(start_tts_server(tts_port));
-
-        tokio::time::sleep(Duration::from_millis(75)).await;
-
-        let mut config = AppConfig::default();
-        config.service.audio.host = "127.0.0.1".to_string();
-        config.service.audio.port = audio_port;
-        config.service.asr.host = "127.0.0.1".to_string();
-        config.service.asr.port = asr_port;
-        config.service.alignment.host = "127.0.0.1".to_string();
-        config.service.alignment.port = alignment_port;
-        config.service.tts.host = "127.0.0.1".to_string();
-        config.service.tts.port = tts_port;
-        config.service.pipeline.selected = "integration".to_string();
-        config.service.pipeline.definitions.insert(
-            "integration".to_string(),
-            PipelineDefinitionConfig {
-                pre: vec![PipelineStepRef::Name("audio_transform".to_string())],
-                transcription: PipelineStepRef::Name("asr_transcribe".to_string()),
-                post: vec![
-                    PipelineStepRef::Name("alignment_enrich".to_string()),
-                    PipelineStepRef::Name("tts_synthesize".to_string()),
-                ],
-            },
-        );
-
-        let app = Application::new(config).await.expect("app should initialize");
-        let response = app
-            .state
-            .command_service
-            .execute(
-                TranscribeAudioCommand::new(TranscribeAudioRequest {
-                    samples: vec![0.1, 0.2, 0.3],
-                    sample_rate_hz: Some(16_000),
-                    language_hint: Some("en".to_string()),
-                    session_id: Some("integration-session".to_string()),
-                }),
-                CommandContext::new(),
-            )
-            .await
-            .expect("pipeline command should succeed");
-
-        assert_eq!(response.session_id, "integration-session");
-        assert_eq!(response.text, "hello world");
-        assert_eq!(response.aligned_words.len(), 1);
-        assert!(response.tts_output.is_some());
-
-        audio_server.abort();
-        asr_server.abort();
-        alignment_server.abort();
-        tts_server.abort();
-        let _ = audio_server.await;
-        let _ = asr_server.await;
-        let _ = alignment_server.await;
-        let _ = tts_server.await;
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    async fn start_audio_server(port: u16) {
-        let addr: SocketAddr = format!("127.0.0.1:{port}")
-            .parse()
-            .expect("audio socket address");
-        Server::builder()
-            .add_service(audio_grpc_server::AudioServiceServer::new(MockAudioService))
-            .serve(addr)
-            .await
-            .expect("audio server should run");
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    async fn start_asr_server(port: u16) {
-        let addr: SocketAddr = format!("127.0.0.1:{port}")
-            .parse()
-            .expect("asr socket address");
-        Server::builder()
-            .add_service(asr_grpc_server::AsrServiceServer::new(MockAsrService))
-            .serve(addr)
-            .await
-            .expect("asr server should run");
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    async fn start_alignment_server(port: u16) {
-        let addr: SocketAddr = format!("127.0.0.1:{port}")
-            .parse()
-            .expect("alignment socket address");
-        Server::builder()
-            .add_service(alignment_grpc_server::AlignmentServiceServer::new(MockAlignmentService))
-            .serve(addr)
-            .await
-            .expect("alignment server should run");
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    async fn start_tts_server(port: u16) {
-        let addr: SocketAddr = format!("127.0.0.1:{port}")
-            .parse()
-            .expect("tts socket address");
-        Server::builder()
-            .add_service(tts_grpc_server::TtsServiceServer::new(MockTtsService))
-            .serve(addr)
-            .await
-            .expect("tts server should run");
-    }
-
-    #[cfg(feature = "tts-grpc")]
-    fn pick_free_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
-            .expect("bind ephemeral port")
-            .local_addr()
-            .expect("extract local address")
-            .port()
+            .unwrap();
+        let align_tts = loader
+            .load_step(&PipelineStepSpec::new("alignment_enrich_tts"))
+            .unwrap();
+        assert!(Arc::ptr_eq(&align, &align_tts));
+        let align_result = loader
+            .load_step(&PipelineStepSpec::new("alignment_enrich_result"))
+            .unwrap();
+        assert!(Arc::ptr_eq(&align, &align_result));
     }
 }

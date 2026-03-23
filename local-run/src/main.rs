@@ -41,6 +41,7 @@ fn run() -> Result<(), String> {
         "audio-service",
         "asr-service",
         "alignment-service",
+        "tempo-service",
         "orchestration-service",
     ]);
 
@@ -69,6 +70,13 @@ fn run() -> Result<(), String> {
             } else {
                 None
             },
+        },
+        ServiceSpec {
+            name: "tempo-service",
+            package: "tempo-setup",
+            bin: "tempo-service",
+            working_dir: "tempo-service",
+            feature: None,
         },
         ServiceSpec {
             name: "orchestration-service",

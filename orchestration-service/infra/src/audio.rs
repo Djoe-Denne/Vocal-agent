@@ -78,7 +78,7 @@ impl PipelineStage for ResampleStage {
     }
 }
 
-fn resample_linear(samples: &[f32], source_rate_hz: u32, target_rate_hz: u32) -> Vec<f32> {
+pub(crate) fn resample_linear(samples: &[f32], source_rate_hz: u32, target_rate_hz: u32) -> Vec<f32> {
     if source_rate_hz == target_rate_hz {
         return samples.to_vec();
     }

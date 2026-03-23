@@ -1,16 +1,19 @@
 [package]
-name = "orchestration-infra"
+name = "tempo-application"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
 [dependencies]
-orchestration-domain = { path = "../domain" }
+tempo-domain = { path = "../domain" }
 async-trait = { workspace = true }
+rustycog-command = { workspace = true }
 serde = { workspace = true }
-serde_json = { workspace = true }
+thiserror = { workspace = true }
 tracing = { workspace = true }
+uuid = { workspace = true }
+validator = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

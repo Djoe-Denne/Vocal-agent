@@ -1,0 +1,17 @@
+[server]
+host = "127.0.0.1"
+port = 8085
+
+[logging]
+level = "debug"
+filter = "warn,tempo_=debug,rustycog_=debug"
+
+[tempo]
+sample_rate_hz = 16000
+wsola_window_ms = 30
+wsola_overlap_ratio = 0.75
+crossfade_ms = 8
+stretch_tolerance = 0.05
+max_stretch_ratio = 6.0
+min_stretch_ratio = 0.15
+silence_threshold_db = -40.0

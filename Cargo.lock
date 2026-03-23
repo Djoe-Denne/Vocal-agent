@@ -2515,6 +2515,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "orchestration-infra"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "orchestration-domain",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "orchestration-infra-alignment"
 version = "0.1.0"
 dependencies = [
@@ -2554,16 +2566,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchestration-infra-tts"
+name = "orchestration-infra-tempo"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "orchestration-domain",
  "serde_json",
+ "tempo-grpc_server",
  "tokio",
  "tonic",
  "tracing",
- "tts-grpc_server",
 ]
 
 [[package]]
@@ -2593,18 +2605,19 @@ dependencies = [
  "orchestration-configuration",
  "orchestration-domain",
  "orchestration-http_server",
+ "orchestration-infra",
  "orchestration-infra-alignment",
  "orchestration-infra-asr",
  "orchestration-infra-audio",
- "orchestration-infra-tts",
+ "orchestration-infra-tempo",
  "orchestration-infra-tts-rest",
  "rustycog-command",
  "rustycog-config",
  "rustycog-http",
+ "tempo-grpc_server",
  "tokio",
  "tonic",
  "tracing",
- "tts-grpc_server",
 ]
 
 [[package]]
@@ -2872,15 +2885,6 @@ checksum = "479ca8adacdd7ce8f1fb39ce9ecccbfe93a3f1344b3d0d97f20bc0196208f62b"
 dependencies = [
  "proc-macro2",
  "syn",
-]
-
-[[package]]
-name = "primal-check"
-version = "0.3.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc0d895b311e3af9902528fbb8f928688abbd95872819320517cc24ca6b2bd08"
-dependencies = [
- "num-integer",
 ]
 
 [[package]]
@@ -3447,20 +3451,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357703d41365b4b27c590e3ed91eabb1b663f07c4c084095e60cbed4362dff0d"
 
 [[package]]
-name = "rustfft"
-version = "6.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21db5f9893e91f41798c88680037dba611ca6674703c1a18601b01a72c8adb89"
-dependencies = [
- "num-complex",
- "num-integer",
- "num-traits",
- "primal-check",
- "strength_reduce",
- "transpose",
-]
-
-[[package]]
 name = "rustix"
 version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3958,12 +3948,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "strength_reduce"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe895eb47f22e2ddd4dabc02bce419d2e643c8e3b585c78158b349195bc24d82"
-
-[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4074,6 +4058,85 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "tempo-application"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rustycog-command",
+ "serde",
+ "tempo-domain",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "tempo-configuration"
+version = "0.1.0"
+dependencies = [
+ "rustycog-config",
+ "rustycog-logger",
+ "serde",
+ "tokio",
+]
+
+[[package]]
+name = "tempo-domain"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "rustycog-core",
+ "serde",
+]
+
+[[package]]
+name = "tempo-grpc_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "prost",
+ "protoc-bin-vendored",
+ "rustycog-command",
+ "rustycog-config",
+ "tempo-application",
+ "tempo-domain",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+]
+
+[[package]]
+name = "tempo-infra-tempo"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "tempo-domain",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "tempo-setup"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "rustycog-command",
+ "rustycog-config",
+ "tempo-application",
+ "tempo-configuration",
+ "tempo-domain",
+ "tempo-grpc_server",
+ "tempo-infra-tempo",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -4558,114 +4621,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "transpose"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ad61aed86bc3faea4300c7aee358b4c6d0c8d6ccc36524c96e4c92ccf26e77e"
-dependencies = [
- "num-integer",
- "strength_reduce",
-]
-
-[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
-
-[[package]]
-name = "tts-application"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "rustycog-command",
- "serde",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tts-domain",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "tts-configuration"
-version = "0.1.0"
-dependencies = [
- "rustycog-config",
- "rustycog-logger",
- "serde",
- "tokio",
-]
-
-[[package]]
-name = "tts-domain"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "rustycog-core",
- "serde",
-]
-
-[[package]]
-name = "tts-grpc_server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "prost",
- "protoc-bin-vendored",
- "rustycog-command",
- "rustycog-config",
- "tokio",
- "tonic",
- "tonic-prost",
- "tonic-prost-build",
- "tracing",
- "tts-application",
- "tts-domain",
-]
-
-[[package]]
-name = "tts-infra-prosody"
-version = "0.1.0"
-dependencies = [
- "rustfft",
- "tracing",
- "tts-domain",
- "vocal-features",
-]
-
-[[package]]
-name = "tts-infra-tts-piper"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "ort",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "tts-domain",
- "tts-infra-prosody",
- "vocal-features",
-]
-
-[[package]]
-name = "tts-setup"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "rustycog-command",
- "rustycog-config",
- "tokio",
- "tracing",
- "tts-application",
- "tts-configuration",
- "tts-domain",
- "tts-grpc_server",
- "tts-infra-tts-piper",
-]
 
 [[package]]
 name = "typed-path"
