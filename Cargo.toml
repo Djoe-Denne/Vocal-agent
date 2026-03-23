@@ -25,8 +25,18 @@ members = [
     "orchestration-service/infra-audio",
     "orchestration-service/infra-asr-whisper",
     "orchestration-service/infra-alignment",
+    "orchestration-service/infra-tts",
+    "orchestration-service/infra-tts-rest",
     "orchestration-service/setup",
     "local-run",
+    "vocal-features",
+    "tts-service/domain",
+    "tts-service/application",
+    "tts-service/infra-tts-piper",
+    "tts-service/infra-prosody",
+    "tts-service/grpc",
+    "tts-service/configuration",
+    "tts-service/setup",
 ]
 resolver = "2"
 
@@ -64,6 +74,8 @@ tonic-build = "0.14.5"
 tonic-prost-build = "0.14.5"
 tonic-prost = "0.14.5"
 protoc-bin-vendored = "3.2.0"
+ort = "=2.0.0-rc.11"
+rustfft = "6"
 
 # RustyCog crates from the shared AIForAll workspace.
 rustycog-config = { path = "../AIForAll/rustycog/rustycog-config" }
@@ -73,3 +85,4 @@ rustycog-logger = { path = "../AIForAll/rustycog/rustycog-logger" }
 rustycog-command = { path = "../AIForAll/rustycog/rustycog-command" }
 rustycog-http = { path = "../AIForAll/rustycog/rustycog-http" }
 rustycog-testing = { path = "../AIForAll/rustycog/rustycog-testing" }
+vocal-features = { path = "vocal-features" }

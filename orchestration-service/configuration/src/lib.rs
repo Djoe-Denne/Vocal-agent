@@ -30,6 +30,8 @@ pub struct ServiceConfig {
     pub asr: GrpcEndpointConfig,
     #[serde(default = "default_alignment_endpoint")]
     pub alignment: GrpcEndpointConfig,
+    #[serde(default = "default_tts_endpoint")]
+    pub tts: GrpcEndpointConfig,
     #[serde(default)]
     pub pipeline: PipelineConfig,
 }
@@ -103,6 +105,7 @@ impl Default for ServiceConfig {
             audio: default_audio_endpoint(),
             asr: default_asr_endpoint(),
             alignment: default_alignment_endpoint(),
+            tts: default_tts_endpoint(),
             pipeline: PipelineConfig::default(),
         }
     }
@@ -136,7 +139,10 @@ impl Default for PipelineDefinitionConfig {
         Self {
             pre: vec![PipelineStepRef::Name("audio_transform".to_string())],
             transcription: default_pipeline_transcription_step(),
-            post: vec![PipelineStepRef::Name("alignment_enrich".to_string())],
+            post: vec![
+                PipelineStepRef::Name("alignment_enrich".to_string()),
+                PipelineStepRef::Name("tts_synthesize".to_string()),
+            ],
         }
     }
 }
@@ -226,6 +232,13 @@ fn default_alignment_endpoint() -> GrpcEndpointConfig {
     }
 }
 
+fn default_tts_endpoint() -> GrpcEndpointConfig {
+    GrpcEndpointConfig {
+        port: 8084,
+        ..GrpcEndpointConfig::default()
+    }
+}
+
 fn default_pipeline_name() -> String {
     "default".to_string()
 }
@@ -250,6 +263,7 @@ mod tests {
         assert_eq!(cfg.service.audio.port, 8081);
         assert_eq!(cfg.service.asr.port, 8080);
         assert_eq!(cfg.service.alignment.port, 8082);
+        assert_eq!(cfg.service.tts.port, 8084);
         assert_eq!(cfg.server.port, 8080);
     }
 }

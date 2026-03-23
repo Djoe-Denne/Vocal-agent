@@ -42,6 +42,21 @@ pub struct WordTiming {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SynthesizedWordTiming {
+    pub text: String,
+    pub start_ms: u64,
+    pub end_ms: u64,
+    pub fit_strategy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TtsOutput {
+    pub samples: Vec<f32>,
+    pub sample_rate_hz: u32,
+    pub word_timings: Vec<SynthesizedWordTiming>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transcript {
     pub language: LanguageTag,
     pub segments: Vec<TranscriptSegment>,
@@ -54,6 +69,7 @@ pub struct PipelineContext {
     pub audio: AudioChunk,
     pub transcript: Option<Transcript>,
     pub aligned_words: Vec<WordTiming>,
+    pub tts_output: Option<TtsOutput>,
     pub events: Vec<DomainEvent>,
     pub extensions: HashMap<String, Value>,
 }
@@ -69,6 +85,7 @@ impl PipelineContext {
             },
             transcript: None,
             aligned_words: Vec::new(),
+            tts_output: None,
             events: Vec::new(),
             extensions: HashMap::new(),
         }

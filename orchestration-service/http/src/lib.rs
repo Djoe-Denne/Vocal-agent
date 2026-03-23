@@ -11,10 +11,12 @@ pub use handlers::*;
 pub async fn create_app_routes(state: AppState, config: ServerConfig) -> anyhow::Result<()> {
     // WAV payloads serialized as float arrays can be large; raise route body limit.
     let transcribe_route = post(transcribe_audio).layer(DefaultBodyLimit::max(64 * 1024 * 1024));
+    let redub_route = post(redub_audio_wav).layer(DefaultBodyLimit::max(64 * 1024 * 1024));
 
     RouteBuilder::new(state)
         .health_check()
         .route("/api/asr/transcribe", transcribe_route)
+        .route("/api/asr/redub", redub_route)
         .build(config)
         .await
 }

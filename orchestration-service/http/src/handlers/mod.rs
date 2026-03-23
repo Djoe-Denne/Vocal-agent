@@ -1,3 +1,3 @@
 mod asr;
 
-pub use asr::transcribe_audio;
+pub use asr::{redub_audio_wav, transcribe_audio};
