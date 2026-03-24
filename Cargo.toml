@@ -31,8 +31,6 @@ members = [
     "orchestration-service/setup",
     "tempo-service/domain",
     "tempo-service/application",
-    "tempo-service/grpc",
-    "tempo-service/infra-tempo",
     "tempo-service/configuration",
     "tempo-service/setup",
     "local-run",

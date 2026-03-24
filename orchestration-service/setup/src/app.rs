@@ -14,7 +14,7 @@ use orchestration_infra::SwapTtsAudioStage;
 use orchestration_infra_alignment::{connect_alignment_client, AlignmentEnrichStage};
 use orchestration_infra_asr::{connect_asr_client, AsrTranscribeStage};
 use orchestration_infra_audio::{connect_audio_client, AudioTransformStage};
-use orchestration_infra_tempo::{connect_tempo_client, TempoMatchStage};
+use orchestration_infra_tempo::TempoMatchStage;
 use orchestration_infra_tts_rest::TtsRestSynthesizeStage;
 use rustycog_command::GenericCommandService;
 use rustycog_config::ServerConfig;
@@ -102,18 +102,7 @@ impl Application {
             Arc::new(DiagnosticDumpStage::new("04_tempo_result", &dump_dir));
         let dump_final: Arc<dyn PipelineStage> =
             Arc::new(DiagnosticDumpStage::new("05_final", &dump_dir));
-        let tempo_client = connect_with_retry("tempo", || async {
-            connect_tempo_client(
-                &grpc_endpoint_uri(&config.service.tempo),
-                connect_timeout(&config.service.tempo),
-                config.service.tempo.max_decoding_message_bytes,
-                config.service.tempo.max_encoding_message_bytes,
-            )
-            .await
-        })
-        .await?;
         let tempo_stage: Arc<dyn PipelineStage> = Arc::new(TempoMatchStage::new(
-            tempo_client,
             request_timeout(&config.service.tempo),
         ));
         let loader = GrpcPipelineStepLoader {

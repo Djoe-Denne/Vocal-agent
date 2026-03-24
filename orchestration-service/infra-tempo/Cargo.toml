@@ -7,9 +7,4 @@ license.workspace = true
 
 [dependencies]
 orchestration-domain = { path = "../domain" }
-tempo-grpc_server = { path = "../../tempo-service/grpc" }
 async-trait = { workspace = true }
-serde_json = { workspace = true }
-tokio = { workspace = true }
-tonic = { workspace = true }
-tracing = { workspace = true }

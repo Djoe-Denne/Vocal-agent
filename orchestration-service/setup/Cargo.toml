@@ -22,7 +22,6 @@ rustycog-config = { workspace = true }
 rustycog-http = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-tempo-grpc_server = { path = "../../tempo-service/grpc" }
 
 [dev-dependencies]
 alignment-grpc_server = { path = "../../alignment-service/grpc" }

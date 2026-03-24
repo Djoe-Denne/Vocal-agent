@@ -40,15 +40,6 @@ impl TempoMatchUseCase for TempoMatchUseCaseImpl {
             .session_id
             .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-        tracing::debug!(
-            session_id = %session_id,
-            tts_sample_count = request.tts_samples.len(),
-            sample_rate_hz,
-            original_word_count = request.original_timings.len(),
-            tts_word_count = request.tts_timings.len(),
-            "starting tempo matching"
-        );
-
         let output = self
             .matcher
             .match_tempo(TempoMatchRequest {
@@ -58,13 +49,6 @@ impl TempoMatchUseCase for TempoMatchUseCaseImpl {
                 tts_timings: request.tts_timings,
             })
             .await?;
-
-        tracing::debug!(
-            session_id = %session_id,
-            output_sample_count = output.samples.len(),
-            output_sample_rate_hz = output.sample_rate_hz,
-            "tempo matching completed"
-        );
 
         Ok(MatchTempoResponse {
             session_id,
