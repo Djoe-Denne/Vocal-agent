@@ -4,6 +4,7 @@ use anyhow::Error;
 use tempo_application::{TempoCommandRegistryFactory, TempoMatchUseCase, TempoMatchUseCaseImpl};
 use tempo_configuration::AppConfig;
 use tempo_domain::TempoMatchPort;
+use tempo_infra::TempoMatchAdapter;
 use rustycog_command::GenericCommandService;
 use rustycog_config::ServerConfig;
 
@@ -35,8 +36,9 @@ impl Application {
         })
     }
 
-    async fn new(_config: AppConfig) -> Result<Self, Error> {
-        anyhow::bail!("no TempoMatchPort implementation configured — use Application::new_with_matcher")
+    async fn new(config: AppConfig) -> Result<Self, Error> {
+        let matcher: Arc<dyn TempoMatchPort> = Arc::new(TempoMatchAdapter::new());
+        Self::new_with_matcher(config, matcher).await
     }
 
     pub async fn run(self, _server_config: ServerConfig) -> Result<(), Error> {

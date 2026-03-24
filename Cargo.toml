@@ -32,6 +32,7 @@ members = [
     "tempo-service/domain",
     "tempo-service/application",
     "tempo-service/configuration",
+    "tempo-service/infra",
     "tempo-service/setup",
     "local-run",
     "vocal-features",

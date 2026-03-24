@@ -9,6 +9,7 @@ license.workspace = true
 tempo-application = { path = "../application" }
 tempo-configuration = { path = "../configuration" }
 tempo-domain = { path = "../domain" }
+tempo-infra = { path = "../infra" }
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 rustycog-command = { workspace = true }

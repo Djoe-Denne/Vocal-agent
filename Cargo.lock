@@ -4088,6 +4088,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tempo-infra"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "tempo-domain",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "tempo-setup"
 version = "0.1.0"
 dependencies = [
@@ -4098,6 +4108,7 @@ dependencies = [
  "tempo-application",
  "tempo-configuration",
  "tempo-domain",
+ "tempo-infra",
  "tokio",
 ]
 
