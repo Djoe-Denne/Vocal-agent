@@ -56,3 +56,68 @@ pub struct SegmentFrameAnalysis {
     pub hop_samples: usize,
     pub frames: Vec<FrameMetrics>,
 }
+
+// --- Phase 2 entities ---
+
+#[derive(Debug, Clone)]
+pub struct PitchFrame {
+    pub center_sample: usize,
+    pub voiced: bool,
+    pub f0_hz: f32,
+    pub period_samples: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentPitchData {
+    pub segment_index: usize,
+    pub frames: Vec<PitchFrame>,
+}
+
+#[derive(Debug, Clone)]
+pub struct VoicedRegion {
+    pub start_sample: usize,
+    pub end_sample: usize,
+    pub mean_f0: f32,
+    pub mean_period_samples: f32,
+    pub stability_score: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentVoicedRegions {
+    pub segment_index: usize,
+    pub regions: Vec<VoicedRegion>,
+}
+
+#[derive(Debug, Clone)]
+pub struct PitchMark {
+    pub sample_index: usize,
+    pub local_period_samples: f32,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentPitchMarks {
+    pub segment_index: usize,
+    pub marks: Vec<PitchMark>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StretchMode {
+    Pause,
+    VoicedPsola,
+    KeepNearConstant,
+}
+
+#[derive(Debug, Clone)]
+pub struct StretchRegion {
+    pub start_sample: usize,
+    pub end_sample: usize,
+    pub local_alpha: f64,
+    pub mode: StretchMode,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentStretchPlan {
+    pub segment_index: usize,
+    pub regions: Vec<StretchRegion>,
+}

@@ -1,7 +1,10 @@
 use tempo_domain::TempoPipelineStage;
 
 use crate::engine::TempoPipelineEngine;
-use crate::stages::{AudioPrepareStage, FrameAnalysisStage, SegmentExtractionStage, SegmentPlanStage};
+use crate::stages::{
+    AudioPrepareStage, F0EstimationStage, FrameAnalysisStage, PitchMarkStage,
+    SegmentExtractionStage, SegmentPlanStage, StretchRegionStage, VoicedZoneStage,
+};
 
 pub struct TempoPipelineBuilder {
     stages: Vec<Box<dyn TempoPipelineStage>>,
@@ -23,13 +26,19 @@ impl TempoPipelineBuilder {
         TempoPipelineEngine::new(self.stages)
     }
 
-    /// Build the canonical Phase 1 (socle) pipeline with all stages in spec order.
+    /// Build the full pipeline with all implemented stages in spec order.
     pub fn default_pipeline() -> TempoPipelineEngine {
         Self::new()
+            // Phase 1 -- socle
             .push(Box::new(AudioPrepareStage))
             .push(Box::new(SegmentPlanStage))
             .push(Box::new(SegmentExtractionStage))
             .push(Box::new(FrameAnalysisStage::default()))
+            // Phase 2 -- analyse
+            .push(Box::new(F0EstimationStage))
+            .push(Box::new(VoicedZoneStage))
+            .push(Box::new(PitchMarkStage))
+            .push(Box::new(StretchRegionStage))
             .build()
     }
 }
