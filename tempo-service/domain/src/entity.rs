@@ -121,3 +121,42 @@ pub struct SegmentStretchPlan {
     pub segment_index: usize,
     pub regions: Vec<StretchRegion>,
 }
+
+// --- Phase 3 entities ---
+
+#[derive(Debug, Clone)]
+pub struct Grain {
+    pub analysis_mark_index: usize,
+    pub center_sample: usize,
+    pub windowed_samples: Vec<f32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentGrains {
+    pub segment_index: usize,
+    pub grains: Vec<Grain>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SynthesisMark {
+    pub output_sample_index: usize,
+    pub mapped_analysis_mark_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentSynthesisGrid {
+    pub segment_index: usize,
+    pub marks: Vec<SynthesisMark>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SynthesisPlacement {
+    pub output_center_sample: usize,
+    pub source_grain_index: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct SegmentSynthesisPlan {
+    pub segment_index: usize,
+    pub placements: Vec<SynthesisPlacement>,
+}

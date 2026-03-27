@@ -1,6 +1,7 @@
 use crate::entity::{
-    SegmentAudio, SegmentFrameAnalysis, SegmentPitchData, SegmentPitchMarks, SegmentPlan,
-    SegmentStretchPlan, SegmentVoicedRegions, WordTiming,
+    SegmentAudio, SegmentFrameAnalysis, SegmentGrains, SegmentPitchData, SegmentPitchMarks,
+    SegmentPlan, SegmentStretchPlan, SegmentSynthesisGrid, SegmentSynthesisPlan,
+    SegmentVoicedRegions, WordTiming,
 };
 use crate::DomainError;
 
@@ -16,6 +17,9 @@ pub struct TempoPipelineContext {
     pub voiced_regions: Vec<SegmentVoicedRegions>,
     pub pitch_marks: Vec<SegmentPitchMarks>,
     pub stretch_plans: Vec<SegmentStretchPlan>,
+    pub grains: Vec<SegmentGrains>,
+    pub synthesis_grids: Vec<SegmentSynthesisGrid>,
+    pub synthesis_plans: Vec<SegmentSynthesisPlan>,
 }
 
 impl TempoPipelineContext {
@@ -37,6 +41,9 @@ impl TempoPipelineContext {
             voiced_regions: Vec::new(),
             pitch_marks: Vec::new(),
             stretch_plans: Vec::new(),
+            grains: Vec::new(),
+            synthesis_grids: Vec::new(),
+            synthesis_plans: Vec::new(),
         }
     }
 }

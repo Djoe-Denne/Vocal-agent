@@ -1,17 +1,25 @@
 mod audio_prepare;
 mod f0_estimation;
 mod frame_analysis;
+mod grain_extraction;
+mod overlap_add;
 mod pitch_mark;
 mod segment_extraction;
 mod segment_plan;
 mod stretch_region;
+mod synthesis_grid;
+mod synthesis_mapping;
 mod voiced_zone;
 
 pub use audio_prepare::AudioPrepareStage;
 pub use f0_estimation::F0EstimationStage;
 pub use frame_analysis::FrameAnalysisStage;
+pub use grain_extraction::GrainExtractionStage;
+pub use overlap_add::OverlapAddStage;
 pub use pitch_mark::PitchMarkStage;
 pub use segment_extraction::SegmentExtractionStage;
 pub use segment_plan::SegmentPlanStage;
 pub use stretch_region::StretchRegionStage;
+pub use synthesis_grid::SynthesisGridStage;
+pub use synthesis_mapping::SynthesisMappingStage;
 pub use voiced_zone::VoicedZoneStage;

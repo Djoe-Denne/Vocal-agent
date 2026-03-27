@@ -2,8 +2,9 @@ use tempo_domain::TempoPipelineStage;
 
 use crate::engine::TempoPipelineEngine;
 use crate::stages::{
-    AudioPrepareStage, F0EstimationStage, FrameAnalysisStage, PitchMarkStage,
-    SegmentExtractionStage, SegmentPlanStage, StretchRegionStage, VoicedZoneStage,
+    AudioPrepareStage, F0EstimationStage, FrameAnalysisStage, GrainExtractionStage,
+    OverlapAddStage, PitchMarkStage, SegmentExtractionStage, SegmentPlanStage,
+    StretchRegionStage, SynthesisGridStage, SynthesisMappingStage, VoicedZoneStage,
 };
 
 pub struct TempoPipelineBuilder {
@@ -39,6 +40,11 @@ impl TempoPipelineBuilder {
             .push(Box::new(VoicedZoneStage))
             .push(Box::new(PitchMarkStage))
             .push(Box::new(StretchRegionStage))
+            // Phase 3 -- synthese
+            .push(Box::new(GrainExtractionStage))
+            .push(Box::new(SynthesisGridStage))
+            .push(Box::new(SynthesisMappingStage))
+            .push(Box::new(OverlapAddStage))
             .build()
     }
 }
