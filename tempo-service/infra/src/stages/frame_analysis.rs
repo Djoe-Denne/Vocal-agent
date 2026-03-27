@@ -8,6 +8,7 @@ const DEFAULT_HOP_MS: u64 = 10;
 const ENERGY_FLOOR: f32 = 1e-10;
 const ZCR_VOICED_THRESHOLD: f32 = 0.15;
 const ENERGY_SILENCE_THRESHOLD: f32 = 1e-6;
+const PERIODICITY_VOICED_THRESHOLD: f32 = 0.4;
 
 /// Step 4: frame-by-frame analysis of energy, voicing, and periodicity.
 ///
@@ -74,8 +75,9 @@ impl TempoPipelineStage for FrameAnalysisStage {
                 let zcr = zero_crossing_rate(frame);
                 let periodicity = normalized_autocorrelation_peak(frame, rate);
 
-                let is_voiced =
-                    energy > ENERGY_SILENCE_THRESHOLD && zcr < ZCR_VOICED_THRESHOLD;
+                let is_voiced = energy > ENERGY_SILENCE_THRESHOLD
+                    && zcr < ZCR_VOICED_THRESHOLD
+                    && periodicity > PERIODICITY_VOICED_THRESHOLD;
 
                 frames.push(FrameMetrics {
                     energy,
@@ -297,5 +299,31 @@ mod tests {
         let frame = vec![0.5; 100];
         let zcr = zero_crossing_rate(&frame);
         assert_eq!(zcr, 0.0);
+    }
+
+    #[test]
+    fn noisy_signal_with_low_periodicity_is_unvoiced() {
+        let rate = 16_000u32;
+        // Pseudo-random noise via LCG -- high energy, zero-mean, no periodicity
+        let mut rng: u32 = 12345;
+        let samples: Vec<f32> = (0..4800)
+            .map(|_| {
+                rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+                let val = ((rng >> 16) as i16) as f32 / i16::MAX as f32;
+                val * 0.6
+            })
+            .collect();
+        let mut ctx = ctx_with_segment(samples, rate);
+        let stage = FrameAnalysisStage::default();
+        stage.execute(&mut ctx).expect("should succeed");
+
+        let voiced_count = ctx.frame_analyses[0].frames.iter().filter(|f| f.is_voiced).count();
+        let total = ctx.frame_analyses[0].frames.len();
+        let voiced_pct = if total > 0 { voiced_count as f32 / total as f32 } else { 0.0 };
+        assert!(
+            voiced_pct < 0.3,
+            "noisy signal should have few voiced frames, got {:.0}%",
+            voiced_pct * 100.0
+        );
     }
 }

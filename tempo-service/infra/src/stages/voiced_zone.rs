@@ -4,6 +4,8 @@ use tempo_domain::{
 };
 
 const MIN_VOICED_ZONE_MS: u64 = 30;
+const MIN_VOICED_FRAME_RATIO: f32 = 0.6;
+const MAX_F0_COEFFICIENT_OF_VARIATION: f32 = 0.3;
 
 /// Step 6: group consecutive voiced pitch frames into continuous voiced regions.
 ///
@@ -121,11 +123,26 @@ fn build_region(
 
     let duration = end_sample - start_sample;
     if duration < min_zone_samples {
+        tracing::trace!(
+            start_sample, end_sample, duration, min_zone_samples,
+            "voiced_zone: rejected region -- too short"
+        );
         return None;
     }
 
     let voiced_frames: Vec<f32> = run.iter().filter(|f| f.voiced).map(|f| f.f0_hz).collect();
     if voiced_frames.is_empty() {
+        return None;
+    }
+
+    let voiced_ratio = voiced_frames.len() as f32 / run.len() as f32;
+    if voiced_ratio < MIN_VOICED_FRAME_RATIO {
+        tracing::debug!(
+            start_sample, end_sample,
+            voiced_ratio,
+            threshold = MIN_VOICED_FRAME_RATIO,
+            "voiced_zone: rejected region -- too few voiced frames"
+        );
         return None;
     }
 
@@ -138,17 +155,28 @@ fn build_region(
         .sum::<f32>()
         / voiced_frames.len() as f32;
 
-    let stability_score = if mean_f0 > 0.0 && voiced_frames.len() > 1 {
+    let (stability_score, std_dev) = if mean_f0 > 0.0 && voiced_frames.len() > 1 {
         let variance = voiced_frames
             .iter()
             .map(|f| (f - mean_f0) * (f - mean_f0))
             .sum::<f32>()
             / voiced_frames.len() as f32;
-        let std_dev = variance.sqrt();
-        (1.0 - std_dev / mean_f0).clamp(0.0, 1.0)
+        let sd = variance.sqrt();
+        ((1.0 - sd / mean_f0).clamp(0.0, 1.0), sd)
     } else {
-        1.0
+        (1.0, 0.0)
     };
+
+    let cv = if mean_f0 > 0.0 { std_dev / mean_f0 } else { 0.0 };
+    if cv > MAX_F0_COEFFICIENT_OF_VARIATION {
+        tracing::debug!(
+            start_sample, end_sample,
+            cv, mean_f0, std_dev,
+            threshold = MAX_F0_COEFFICIENT_OF_VARIATION,
+            "voiced_zone: rejected region -- F0 too variable for PSOLA"
+        );
+        return None;
+    }
 
     Some(VoicedRegion {
         start_sample,
@@ -231,7 +259,7 @@ mod tests {
     }
 
     #[test]
-    fn stability_score_is_low_for_variable_f0() {
+    fn highly_variable_f0_region_is_rejected() {
         let frames = vec![
             pitch_frame(0, true, 100.0, 160.0),
             pitch_frame(160, true, 300.0, 53.0),
@@ -245,10 +273,33 @@ mod tests {
         let stage = VoicedZoneStage;
         stage.execute(&mut ctx).expect("should succeed");
 
+        assert!(
+            ctx.voiced_regions[0].regions.is_empty(),
+            "region with extreme F0 variance (CV > 0.3) should be rejected"
+        );
+    }
+
+    #[test]
+    fn moderately_variable_f0_has_low_stability() {
+        // F0 varies within acceptable CV range but still shows instability
+        let frames = vec![
+            pitch_frame(0, true, 180.0, 89.0),
+            pitch_frame(160, true, 220.0, 73.0),
+            pitch_frame(320, true, 185.0, 86.0),
+            pitch_frame(480, true, 215.0, 74.0),
+            pitch_frame(640, true, 190.0, 84.0),
+            pitch_frame(800, true, 210.0, 76.0),
+        ];
+        let mut ctx = ctx_with_pitch(frames);
+
+        let stage = VoicedZoneStage;
+        stage.execute(&mut ctx).expect("should succeed");
+
+        assert_eq!(ctx.voiced_regions[0].regions.len(), 1);
         let r = &ctx.voiced_regions[0].regions[0];
         assert!(
-            r.stability_score < 0.6,
-            "stability {:.2} should be low for variable F0",
+            r.stability_score < 0.95,
+            "stability {:.2} should reflect moderate variation",
             r.stability_score
         );
     }

@@ -3,8 +3,8 @@ use tempo_domain::{
     TempoPipelineStage,
 };
 
-const MIN_F0_HZ: f32 = 50.0;
-const MAX_F0_HZ: f32 = 500.0;
+const MIN_F0_HZ: f32 = 60.0;
+const MAX_F0_HZ: f32 = 350.0;
 const MEDIAN_WINDOW: usize = 5;
 const AUTOCORR_VOICED_THRESHOLD: f32 = 0.3;
 
@@ -86,12 +86,14 @@ impl TempoPipelineStage for F0EstimationStage {
             }
 
             median_smooth_f0(&mut raw_frames);
+            let octave_corrections = octave_correct_f0(&mut raw_frames, rate);
 
             let voiced_count = raw_frames.iter().filter(|f| f.voiced).count();
-            tracing::trace!(
+            tracing::debug!(
                 segment_index = seg_idx,
                 total_frames = raw_frames.len(),
                 voiced_count,
+                octave_corrections,
                 "F0 estimation complete for segment"
             );
 
@@ -208,6 +210,47 @@ fn median_smooth_f0(frames: &mut [PitchFrame]) {
     }
 }
 
+/// Correct octave jumps by comparing each voiced frame with the previous one.
+/// Returns the number of corrections applied.
+fn octave_correct_f0(frames: &mut [PitchFrame], sample_rate_hz: u32) -> usize {
+    const OCTAVE_JUMP_RATIO: f32 = 1.8;
+
+    let mut corrections = 0usize;
+    let mut prev_f0: Option<f32> = None;
+
+    for frame in frames.iter_mut() {
+        if !frame.voiced || frame.f0_hz <= 0.0 {
+            continue;
+        }
+
+        if let Some(pf0) = prev_f0 {
+            if frame.f0_hz > OCTAVE_JUMP_RATIO * pf0 {
+                let half = frame.f0_hz / 2.0;
+                if half >= MIN_F0_HZ && half <= MAX_F0_HZ
+                    && (half - pf0).abs() < (frame.f0_hz - pf0).abs()
+                {
+                    frame.f0_hz = half;
+                    frame.period_samples = (sample_rate_hz as f32 / half).round();
+                    corrections += 1;
+                }
+            } else if frame.f0_hz < pf0 / OCTAVE_JUMP_RATIO {
+                let double = frame.f0_hz * 2.0;
+                if double >= MIN_F0_HZ && double <= MAX_F0_HZ
+                    && (double - pf0).abs() < (frame.f0_hz - pf0).abs()
+                {
+                    frame.f0_hz = double;
+                    frame.period_samples = (sample_rate_hz as f32 / double).round();
+                    corrections += 1;
+                }
+            }
+        }
+
+        prev_f0 = Some(frame.f0_hz);
+    }
+
+    corrections
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -306,6 +349,41 @@ mod tests {
         let mut ctx = TempoPipelineContext::new(vec![0.0; 100], 16_000, Vec::new(), Vec::new());
         let stage = F0EstimationStage;
         assert!(stage.execute(&mut ctx).is_err());
+    }
+
+    #[test]
+    fn octave_jump_is_corrected() {
+        let rate = 16_000u32;
+        let mut frames = vec![
+            PitchFrame { center_sample: 0, voiced: true, f0_hz: 200.0, period_samples: 80.0 },
+            PitchFrame { center_sample: 160, voiced: true, f0_hz: 195.0, period_samples: 82.0 },
+            PitchFrame { center_sample: 320, voiced: true, f0_hz: 400.0, period_samples: 40.0 }, // octave up
+            PitchFrame { center_sample: 480, voiced: true, f0_hz: 198.0, period_samples: 81.0 },
+        ];
+        let corrections = octave_correct_f0(&mut frames, rate);
+        assert!(corrections > 0, "should have corrected at least one octave jump");
+        assert!(
+            (frames[2].f0_hz - 200.0).abs() < 10.0,
+            "corrected F0 {} should be near 200",
+            frames[2].f0_hz
+        );
+    }
+
+    #[test]
+    fn octave_drop_is_corrected() {
+        let rate = 16_000u32;
+        let mut frames = vec![
+            PitchFrame { center_sample: 0, voiced: true, f0_hz: 200.0, period_samples: 80.0 },
+            PitchFrame { center_sample: 160, voiced: true, f0_hz: 100.0, period_samples: 160.0 }, // octave down
+            PitchFrame { center_sample: 320, voiced: true, f0_hz: 205.0, period_samples: 78.0 },
+        ];
+        let corrections = octave_correct_f0(&mut frames, rate);
+        assert!(corrections > 0);
+        assert!(
+            (frames[1].f0_hz - 200.0).abs() < 10.0,
+            "corrected F0 {} should be near 200",
+            frames[1].f0_hz
+        );
     }
 
     #[test]
