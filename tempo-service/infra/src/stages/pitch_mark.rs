@@ -1,5 +1,6 @@
 use tempo_domain::{
-    DomainError, PitchMark, SegmentPitchMarks, TempoPipelineContext, TempoPipelineStage,
+    DomainError, PitchMark, SegmentKind, SegmentPitchMarks, TempoPipelineContext,
+    TempoPipelineStage,
 };
 
 const SEARCH_WINDOW_RATIO: f32 = 0.25;
@@ -31,7 +32,15 @@ impl TempoPipelineStage for PitchMarkStage {
         let mut all_marks = Vec::with_capacity(context.voiced_regions.len());
 
         for (seg_idx, seg_regions) in context.voiced_regions.iter().enumerate() {
-            let samples = &context.segment_audios[seg_idx].local_samples;
+            if context.segment_audios[seg_idx].kind == SegmentKind::Gap {
+                all_marks.push(SegmentPitchMarks {
+                    segment_index: seg_idx,
+                    marks: Vec::new(),
+                });
+                continue;
+            }
+
+            let samples = &context.segment_audios[seg_idx].analysis_samples;
             let mut segment_marks: Vec<PitchMark> = Vec::new();
 
             for region in &seg_regions.regions {
@@ -228,8 +237,8 @@ fn peak_confidence(samples: &[f32], idx: usize, radius: usize) -> f32 {
 mod tests {
     use super::*;
     use tempo_domain::{
-        PitchFrame, SegmentAudio, SegmentPitchData, SegmentVoicedRegions, TempoPipelineContext,
-        VoicedRegion,
+        PitchFrame, SegmentAudio, SegmentKind, SegmentPitchData, SegmentVoicedRegions,
+        TempoPipelineContext, VoicedRegion,
     };
 
     fn sine_ctx(freq: f32, rate: u32, duration_samples: usize) -> TempoPipelineContext {
@@ -250,13 +259,17 @@ mod tests {
         let mut ctx =
             TempoPipelineContext::new(samples.clone(), rate, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: samples,
+            analysis_samples: samples,
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
             global_end_sample: duration_samples,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: duration_samples,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: duration_samples,
             target_duration_samples: duration_samples,
             alpha: 1.0,
+            kind: SegmentKind::Word,
         }];
         ctx.pitch_data = vec![SegmentPitchData {
             segment_index: 0,

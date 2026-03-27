@@ -1,5 +1,6 @@
 use tempo_domain::{
-    DomainError, SegmentVoicedRegions, TempoPipelineContext, TempoPipelineStage, VoicedRegion,
+    DomainError, SegmentKind, SegmentVoicedRegions, TempoPipelineContext, TempoPipelineStage,
+    VoicedRegion,
 };
 
 const MIN_VOICED_ZONE_MS: u64 = 30;
@@ -28,6 +29,17 @@ impl TempoPipelineStage for VoicedZoneStage {
         let mut all_regions = Vec::with_capacity(context.pitch_data.len());
 
         for pitch_data in &context.pitch_data {
+            if context.segment_audios.get(pitch_data.segment_index)
+                .map(|a| a.kind == SegmentKind::Gap)
+                .unwrap_or(false)
+            {
+                all_regions.push(SegmentVoicedRegions {
+                    segment_index: pitch_data.segment_index,
+                    regions: Vec::new(),
+                });
+                continue;
+            }
+
             let frames = &pitch_data.frames;
             let mut regions: Vec<VoicedRegion> = Vec::new();
 

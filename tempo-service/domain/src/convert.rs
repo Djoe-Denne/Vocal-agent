@@ -9,6 +9,17 @@ pub fn samples_to_ms(samples: usize, sample_rate_hz: u32) -> u64 {
     (samples as u64 * 1000) / sample_rate_hz as u64
 }
 
+/// Convert an index in the analysis buffer to the useful (margin-free) coordinate.
+/// Returns `None` if the index falls within the left margin.
+pub fn analysis_to_useful(sample_idx: usize, useful_start: usize) -> Option<usize> {
+    sample_idx.checked_sub(useful_start)
+}
+
+/// Convert an index in useful (margin-free) coordinates back to analysis buffer coordinates.
+pub fn useful_to_analysis(sample_idx: usize, useful_start: usize) -> usize {
+    sample_idx + useful_start
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -39,5 +50,24 @@ mod tests {
         let samples = ms_to_samples(ms, rate);
         let back = samples_to_ms(samples, rate);
         assert!((back as i64 - ms as i64).unsigned_abs() <= 1);
+    }
+
+    #[test]
+    fn analysis_to_useful_within_margin_returns_none() {
+        assert_eq!(analysis_to_useful(5, 10), None);
+    }
+
+    #[test]
+    fn analysis_to_useful_at_boundary() {
+        assert_eq!(analysis_to_useful(10, 10), Some(0));
+    }
+
+    #[test]
+    fn analysis_useful_round_trip() {
+        let useful_start = 160;
+        let useful_idx = 42;
+        let analysis_idx = useful_to_analysis(useful_idx, useful_start);
+        assert_eq!(analysis_idx, 202);
+        assert_eq!(analysis_to_useful(analysis_idx, useful_start), Some(useful_idx));
     }
 }

@@ -1,6 +1,6 @@
 use tempo_domain::{
-    DomainError, SegmentSynthesisGrid, StretchMode, SynthesisMark, TempoPipelineContext,
-    TempoPipelineStage,
+    DomainError, SegmentKind, SegmentSynthesisGrid, StretchMode, SynthesisMark,
+    TempoPipelineContext, TempoPipelineStage,
 };
 
 /// Step 10: build output-side pitch marks from the stretch plan.
@@ -31,6 +31,14 @@ impl TempoPipelineStage for SynthesisGridStage {
         let mut all_grids = Vec::with_capacity(context.stretch_plans.len());
 
         for (seg_idx, stretch_plan) in context.stretch_plans.iter().enumerate() {
+            if context.segment_audios[seg_idx].kind == SegmentKind::Gap {
+                all_grids.push(SegmentSynthesisGrid {
+                    segment_index: seg_idx,
+                    marks: Vec::new(),
+                });
+                continue;
+            }
+
             let analysis_marks = &context.pitch_marks[seg_idx].marks;
             let target_len = context.segment_audios[seg_idx].target_duration_samples;
 
@@ -177,8 +185,8 @@ fn nearest_mark_index(marks: &[tempo_domain::PitchMark], target_pos: f64) -> usi
 mod tests {
     use super::*;
     use tempo_domain::{
-        PitchMark, SegmentAudio, SegmentPitchMarks, SegmentStretchPlan, StretchRegion,
-        TempoPipelineContext,
+        PitchMark, SegmentAudio, SegmentKind, SegmentPitchMarks, SegmentStretchPlan,
+        StretchRegion, TempoPipelineContext,
     };
 
     fn pm(idx: usize, period: f32) -> PitchMark {
@@ -199,13 +207,17 @@ mod tests {
         let mut ctx =
             TempoPipelineContext::new(vec![0.0; n], 16_000, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: vec![0.0; n],
+            analysis_samples: vec![0.0; n],
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
             global_end_sample: n,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: n,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
             target_duration_samples: target,
             alpha,
+            kind: SegmentKind::Word,
         }];
         ctx.pitch_marks = vec![SegmentPitchMarks {
             segment_index: 0,

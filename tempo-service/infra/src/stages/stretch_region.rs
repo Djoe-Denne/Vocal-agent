@@ -1,6 +1,6 @@
 use tempo_domain::{
-    DomainError, SegmentStretchPlan, StretchMode, StretchRegion, TempoPipelineContext,
-    TempoPipelineStage,
+    DomainError, SegmentKind, SegmentStretchPlan, StretchMode, StretchRegion,
+    TempoPipelineContext, TempoPipelineStage,
 };
 
 const PAUSE_ENERGY_THRESHOLD: f32 = 1e-5;
@@ -37,7 +37,15 @@ impl TempoPipelineStage for StretchRegionStage {
         let mut all_plans = Vec::with_capacity(context.segment_audios.len());
 
         for (seg_idx, seg_audio) in context.segment_audios.iter().enumerate() {
-            let n = seg_audio.local_samples.len();
+            if seg_audio.kind == SegmentKind::Gap {
+                all_plans.push(SegmentStretchPlan {
+                    segment_index: seg_idx,
+                    regions: Vec::new(),
+                });
+                continue;
+            }
+
+            let n = seg_audio.analysis_samples.len();
             if n == 0 {
                 all_plans.push(SegmentStretchPlan {
                     segment_index: seg_idx,
@@ -50,7 +58,7 @@ impl TempoPipelineStage for StretchRegionStage {
             let frame_analysis = context.frame_analyses.get(seg_idx);
 
             let mut raw_regions = classify_regions(
-                &seg_audio.local_samples,
+                &seg_audio.analysis_samples,
                 voiced,
                 frame_analysis,
                 n,
@@ -233,8 +241,8 @@ fn weight_for_mode(mode: &StretchMode) -> f64 {
 mod tests {
     use super::*;
     use tempo_domain::{
-        SegmentAudio, SegmentFrameAnalysis, SegmentVoicedRegions, TempoPipelineContext,
-        VoicedRegion,
+        SegmentAudio, SegmentFrameAnalysis, SegmentKind, SegmentVoicedRegions,
+        TempoPipelineContext, VoicedRegion,
     };
 
     fn make_ctx(
@@ -245,13 +253,17 @@ mod tests {
         let n = samples.len();
         let mut ctx = TempoPipelineContext::new(samples.clone(), 16_000, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: samples,
+            analysis_samples: samples,
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
             global_end_sample: n,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: n,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
             target_duration_samples: (n as f64 * alpha) as usize,
             alpha,
+            kind: SegmentKind::Word,
         }];
         ctx.voiced_regions = vec![SegmentVoicedRegions {
             segment_index: 0,

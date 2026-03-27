@@ -4,11 +4,8 @@ const CROSSFADE_BOUNDARY_SAMPLES: usize = 32;
 
 /// Step 14: reassemble modified segments into the global output signal.
 ///
-/// Builds the output buffer sequentially: copies unmodified audio before each
-/// segment, inserts the segment's resynthesized local_samples (trimmed to
-/// exclude extraction margins), and appends unmodified audio after the last
-/// segment. Applies short crossfades at segment boundaries. Writes the final
-/// result back into `context.samples`.
+/// Reads `rendered_samples` from each segment (already margin-free) and
+/// splices them into the output buffer with boundary crossfades.
 pub struct RecombinationStage;
 
 impl TempoPipelineStage for RecombinationStage {
@@ -38,22 +35,16 @@ impl TempoPipelineStage for RecombinationStage {
                 output.extend_from_slice(&original[read_cursor..seg_start]);
             }
 
-            let margin_left = seg_audio.margin_left;
-            let margin_right = seg_audio.margin_right;
-            let local = &seg_audio.local_samples;
-            let useful_start = margin_left.min(local.len());
-            let useful_end = local.len().saturating_sub(margin_right);
-
-            if useful_end > useful_start {
-                let segment_samples = &local[useful_start..useful_end];
+            let segment_samples = &seg_audio.rendered_samples;
+            if !segment_samples.is_empty() {
                 let actual_len = segment_samples.len();
 
                 tracing::debug!(
                     segment_index = seg_idx,
+                    kind = ?plan.kind,
                     target_samples = plan.target_duration_samples,
                     actual_samples = actual_len,
                     delta_samples = actual_len as i64 - plan.target_duration_samples as i64,
-                    original_range = format_args!("{}..{}", plan.start_sample, plan.end_sample),
                     "recombination: segment splice"
                 );
 
@@ -98,7 +89,6 @@ impl TempoPipelineStage for RecombinationStage {
     }
 }
 
-/// Apply a short equal-power crossfade around a splice boundary.
 fn apply_boundary_fade(output: &mut [f32], boundary: usize, half_len: usize) {
     let n = output.len();
     if boundary == 0 || boundary >= n || half_len == 0 {
@@ -128,7 +118,7 @@ fn apply_boundary_fade(output: &mut [f32], boundary: usize, half_len: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempo_domain::{SegmentAudio, SegmentPlan, TempoPipelineContext};
+    use tempo_domain::{SegmentAudio, SegmentKind, SegmentPlan, TempoPipelineContext};
 
     fn make_ctx(
         original: Vec<f32>,
@@ -145,23 +135,34 @@ mod tests {
     fn plan(start: usize, end: usize) -> SegmentPlan {
         let dur = end - start;
         SegmentPlan {
+            kind: SegmentKind::Word,
             start_sample: start,
             end_sample: end,
             original_duration_samples: dur,
             target_duration_samples: dur,
             alpha: 1.0,
+            tts_start_ms: 0,
+            tts_end_ms: 0,
+            original_start_ms: 0,
+            original_end_ms: 0,
+            label: None,
         }
     }
 
-    fn audio(samples: Vec<f32>, global_start: usize, global_end: usize) -> SegmentAudio {
+    fn audio(rendered: Vec<f32>, global_start: usize, global_end: usize) -> SegmentAudio {
+        let n = rendered.len();
         SegmentAudio {
-            local_samples: samples,
+            analysis_samples: Vec::new(),
+            rendered_samples: rendered,
             global_start_sample: global_start,
             global_end_sample: global_end,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: global_start,
+            extract_end_sample: global_end,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
             target_duration_samples: global_end - global_start,
             alpha: 1.0,
+            kind: SegmentKind::Word,
         }
     }
 
@@ -177,18 +178,15 @@ mod tests {
         let stage = RecombinationStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        // Before segment: original values
         assert!((ctx.samples[0] - 0.1).abs() < 0.2);
-        // After segment: original values
         assert!((ctx.samples[ctx.samples.len() - 1] - 0.1).abs() < 0.2);
-        // Total length: 200 (before) + 500 (segment) + 300 (after) = 1000
         assert_eq!(ctx.samples.len(), 1000);
     }
 
     #[test]
     fn stretched_segment_changes_output_length() {
         let original = vec![0.1; 1000];
-        let modified = vec![0.9; 750]; // 50% longer than 500
+        let modified = vec![0.9; 750];
         let mut ctx = make_ctx(
             original,
             vec![(plan(200, 700), audio(modified, 200, 700))],
@@ -217,28 +215,9 @@ mod tests {
         let stage = RecombinationStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        // 100 + 200 + 200 (gap) + 200 + 300 = 1000
         assert_eq!(ctx.samples.len(), 1000);
-        // First segment region should have 1.0 values (approximately, crossfade at edges)
         assert!((ctx.samples[150] - 1.0).abs() < 0.3);
-        // Second segment region
         assert!((ctx.samples[550] - 2.0).abs() < 0.3);
-    }
-
-    #[test]
-    fn margins_are_trimmed() {
-        let original = vec![0.0; 400];
-        let local = vec![0.5; 220]; // 10 margin_left + 200 useful + 10 margin_right
-        let mut seg = audio(local, 100, 300);
-        seg.margin_left = 10;
-        seg.margin_right = 10;
-        let mut ctx = make_ctx(original, vec![(plan(100, 300), seg)]);
-
-        let stage = RecombinationStage;
-        stage.execute(&mut ctx).expect("should succeed");
-
-        // 100 (before) + 200 (trimmed segment) + 100 (after) = 400
-        assert_eq!(ctx.samples.len(), 400);
     }
 
     #[test]

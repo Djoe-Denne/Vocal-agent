@@ -1,11 +1,10 @@
-use tempo_domain::{DomainError, StretchMode, TempoPipelineContext, TempoPipelineStage};
+use tempo_domain::{DomainError, SegmentKind, StretchMode, TempoPipelineContext, TempoPipelineStage};
 
 /// Step 13: handle unvoiced zones and transitions in resynthesized segments.
 ///
-/// The overlap-add stage already gap-filled KeepNearConstant zones with
-/// original samples. This stage ensures Pause regions are scaled to their
-/// local alpha and applies a short crossfade at voiced/unvoiced boundaries
-/// to avoid clicks.
+/// Attenuates Pause regions and applies crossfades at voiced/unvoiced
+/// boundaries. Operates on `rendered_samples`.
+/// Gap segments are skipped.
 pub struct UnvoicedHandlingStage;
 
 const CROSSFADE_SAMPLES: usize = 64;
@@ -23,12 +22,16 @@ impl TempoPipelineStage for UnvoicedHandlingStage {
         }
 
         for (seg_idx, seg_audio) in context.segment_audios.iter_mut().enumerate() {
+            if seg_audio.kind == SegmentKind::Gap {
+                continue;
+            }
+
             let stretch_plan = match context.stretch_plans.get(seg_idx) {
                 Some(p) => p,
                 None => continue,
             };
 
-            let output = &mut seg_audio.local_samples;
+            let output = &mut seg_audio.rendered_samples;
             let n = output.len();
 
             for region in &stretch_plan.regions {
@@ -40,16 +43,10 @@ impl TempoPipelineStage for UnvoicedHandlingStage {
                             *sample *= 0.05;
                         }
                     }
-                    StretchMode::KeepNearConstant => {
-                        // Already handled by overlap-add gap-fill -- nothing to do
-                    }
-                    StretchMode::VoicedPsola => {
-                        // Already processed by overlap-add -- nothing to do
-                    }
+                    StretchMode::KeepNearConstant | StretchMode::VoicedPsola => {}
                 }
             }
 
-            // Apply short crossfades at region boundaries to avoid clicks
             for i in 0..stretch_plan.regions.len().saturating_sub(1) {
                 let boundary = stretch_plan.regions[i].end_sample.min(n);
                 let left_mode = &stretch_plan.regions[i].mode;
@@ -104,7 +101,7 @@ fn apply_crossfade(samples: &mut [f32], boundary: usize, half_len: usize) {
 mod tests {
     use super::*;
     use tempo_domain::{
-        SegmentAudio, SegmentStretchPlan, StretchRegion, TempoPipelineContext,
+        SegmentAudio, SegmentKind, SegmentStretchPlan, StretchRegion, TempoPipelineContext,
     };
 
     fn make_ctx(
@@ -114,13 +111,17 @@ mod tests {
         let n = samples.len();
         let mut ctx = TempoPipelineContext::new(samples.clone(), 16_000, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: samples,
+            analysis_samples: samples.clone(),
+            rendered_samples: samples,
             global_start_sample: 0,
             global_end_sample: n,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: n,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
             target_duration_samples: n,
             alpha: 1.0,
+            kind: SegmentKind::Word,
         }];
         ctx.stretch_plans = vec![SegmentStretchPlan {
             segment_index: 0,
@@ -143,7 +144,7 @@ mod tests {
         let stage = UnvoicedHandlingStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        for &s in &ctx.segment_audios[0].local_samples {
+        for &s in &ctx.segment_audios[0].rendered_samples {
             assert!(s.abs() < 0.1, "pause samples should be attenuated");
         }
     }
@@ -162,7 +163,7 @@ mod tests {
         let stage = UnvoicedHandlingStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        assert_eq!(ctx.segment_audios[0].local_samples[400], 0.5);
+        assert_eq!(ctx.segment_audios[0].rendered_samples[400], 0.5);
     }
 
     #[test]
@@ -190,8 +191,7 @@ mod tests {
         let stage = UnvoicedHandlingStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        // The crossfade region around sample 200 should have modified values
-        let out = &ctx.segment_audios[0].local_samples;
+        let out = &ctx.segment_audios[0].rendered_samples;
         assert!(out.len() == 400);
     }
 

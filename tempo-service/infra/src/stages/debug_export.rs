@@ -2,7 +2,7 @@ use serde::Serialize;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::PathBuf;
-use tempo_domain::{DomainError, StretchMode, TempoPipelineContext, TempoPipelineStage};
+use tempo_domain::{DomainError, SegmentKind, StretchMode, TempoPipelineContext, TempoPipelineStage};
 use uuid::Uuid;
 
 /// Step 15: write structured debug artifacts to `./debug-dump/{session}/`.
@@ -37,23 +37,14 @@ impl TempoPipelineStage for DebugExportStage {
         });
 
         write_json(&session_dir, "01_segment_plans.json", &context.segment_plans);
-
         write_json(&session_dir, "02_segment_audios_meta.json", &segment_audio_metas(context));
-
         write_json(&session_dir, "03_frame_analyses.json", &context.frame_analyses);
-
         write_json(&session_dir, "04_pitch_data.json", &context.pitch_data);
-
         write_json(&session_dir, "05_voiced_regions.json", &context.voiced_regions);
-
         write_json(&session_dir, "06_pitch_marks.json", &context.pitch_marks);
-
         write_json(&session_dir, "07_stretch_plans.json", &context.stretch_plans);
-
         write_json(&session_dir, "08_grains_meta.json", &grains_meta(context));
-
         write_json(&session_dir, "09_synthesis_grids.json", &context.synthesis_grids);
-
         write_json(&session_dir, "10_synthesis_plans.json", &context.synthesis_plans);
 
         let summary = build_pipeline_summary(context);
@@ -90,7 +81,7 @@ fn write_json<T: Serialize>(dir: &PathBuf, filename: &str, value: &T) {
 }
 
 // ---------------------------------------------------------------------------
-// Lightweight metadata structs (avoid dumping raw sample buffers)
+// Lightweight metadata structs
 // ---------------------------------------------------------------------------
 
 #[derive(Serialize)]
@@ -102,12 +93,16 @@ struct InputTimings<'a> {
 #[derive(Serialize)]
 struct SegmentAudioMeta {
     segment_index: usize,
-    local_samples_len: usize,
+    kind: String,
+    analysis_samples_len: usize,
+    rendered_samples_len: usize,
     global_start_sample: usize,
     global_end_sample: usize,
-    margin_left: usize,
-    margin_right: usize,
-    useful_samples: usize,
+    extract_start_sample: usize,
+    extract_end_sample: usize,
+    useful_start_in_analysis: usize,
+    useful_end_in_analysis: usize,
+    useful_len: usize,
     target_duration_samples: usize,
     alpha: f64,
     rms_energy: f32,
@@ -119,25 +114,26 @@ fn segment_audio_metas(ctx: &TempoPipelineContext) -> Vec<SegmentAudioMeta> {
         .iter()
         .enumerate()
         .map(|(i, a)| {
-            let useful = a.local_samples.len()
-                .saturating_sub(a.margin_left)
-                .saturating_sub(a.margin_right);
-            let rms = if a.local_samples.is_empty() {
+            let useful_len = a.useful_end_in_analysis.saturating_sub(a.useful_start_in_analysis);
+            let buf = if !a.rendered_samples.is_empty() { &a.rendered_samples } else { &a.analysis_samples };
+            let rms = if buf.is_empty() {
                 0.0
             } else {
-                (a.local_samples.iter().map(|s| s * s).sum::<f32>()
-                    / a.local_samples.len() as f32)
-                    .sqrt()
+                (buf.iter().map(|s| s * s).sum::<f32>() / buf.len() as f32).sqrt()
             };
-            let peak = a.local_samples.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
+            let peak = buf.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
             SegmentAudioMeta {
                 segment_index: i,
-                local_samples_len: a.local_samples.len(),
+                kind: format!("{:?}", a.kind),
+                analysis_samples_len: a.analysis_samples.len(),
+                rendered_samples_len: a.rendered_samples.len(),
                 global_start_sample: a.global_start_sample,
                 global_end_sample: a.global_end_sample,
-                margin_left: a.margin_left,
-                margin_right: a.margin_right,
-                useful_samples: useful,
+                extract_start_sample: a.extract_start_sample,
+                extract_end_sample: a.extract_end_sample,
+                useful_start_in_analysis: a.useful_start_in_analysis,
+                useful_end_in_analysis: a.useful_end_in_analysis,
+                useful_len,
                 target_duration_samples: a.target_duration_samples,
                 alpha: a.alpha,
                 rms_energy: rms,
@@ -184,6 +180,8 @@ struct PipelineSummary {
     output_duration_ms: u64,
     duration_delta_ms: i64,
     segment_count: usize,
+    word_segment_count: usize,
+    gap_segment_count: usize,
     segments: Vec<SegmentSummary>,
     anomalies: Vec<String>,
 }
@@ -191,8 +189,8 @@ struct PipelineSummary {
 #[derive(Serialize)]
 struct SegmentSummary {
     index: usize,
-    tts_word: String,
-    original_word: String,
+    kind: String,
+    label: String,
     tts_duration_ms: u64,
     original_duration_ms: u64,
     alpha: f64,
@@ -230,19 +228,16 @@ fn build_pipeline_summary(ctx: &TempoPipelineContext) -> PipelineSummary {
     let mut anomalies = Vec::new();
 
     for (seg_idx, plan) in ctx.segment_plans.iter().enumerate() {
-        let tts_word = ctx.tts_timings.get(seg_idx).map(|w| w.word.clone()).unwrap_or_default();
-        let original_word = ctx.original_timings.get(seg_idx).map(|w| w.word.clone()).unwrap_or_default();
-        let tts_duration_ms = ctx.tts_timings.get(seg_idx).map(|w| w.end_ms.saturating_sub(w.start_ms)).unwrap_or(0);
-        let original_duration_ms = ctx.original_timings.get(seg_idx).map(|w| w.end_ms.saturating_sub(w.start_ms)).unwrap_or(0);
+        let label = plan.label.clone().unwrap_or_default();
+        let tts_duration_ms = plan.tts_end_ms.saturating_sub(plan.tts_start_ms);
+        let original_duration_ms = plan.original_end_ms.saturating_sub(plan.original_start_ms);
 
         let source_duration_ms = samples_to_ms(plan.original_duration_samples, rate);
         let target_duration_ms = samples_to_ms(plan.target_duration_samples, rate);
 
-        let obtained_samples = ctx.segment_audios.get(seg_idx).map(|a| {
-            a.local_samples.len()
-                .saturating_sub(a.margin_left)
-                .saturating_sub(a.margin_right)
-        }).unwrap_or(0);
+        let obtained_samples = ctx.segment_audios.get(seg_idx)
+            .map(|a| a.rendered_samples.len())
+            .unwrap_or(0);
         let obtained_duration_ms = samples_to_ms(obtained_samples, rate);
         let duration_error_ms = obtained_duration_ms as i64 - target_duration_ms as i64;
 
@@ -252,35 +247,32 @@ fn build_pipeline_summary(ctx: &TempoPipelineContext) -> PipelineSummary {
         let voiced_pct = if total_frames > 0 { (voiced_frames as f32 / total_frames as f32) * 100.0 } else { 0.0 };
 
         let voiced_region_count = ctx.voiced_regions.get(seg_idx).map(|vr| vr.regions.len()).unwrap_or(0);
-
         let stretch = stretch_breakdown(ctx, seg_idx);
         let grain_count = ctx.grains.get(seg_idx).map(|g| g.grains.len()).unwrap_or(0);
         let synthesis_placement_count = ctx.synthesis_plans.get(seg_idx).map(|sp| sp.placements.len()).unwrap_or(0);
 
-        // Anomaly detection
-        if plan.alpha > 2.0 {
-            anomalies.push(format!("Segment {} (\"{}\"): alpha={:.2} is very high (>2x stretch), may cause artifacts", seg_idx, tts_word, plan.alpha));
-        }
-        if plan.alpha < 0.5 {
-            anomalies.push(format!("Segment {} (\"{}\"): alpha={:.2} is very low (<0.5x compression), may cause artifacts", seg_idx, tts_word, plan.alpha));
-        }
-        if voiced_pct < 10.0 && total_frames > 0 {
-            anomalies.push(format!("Segment {} (\"{}\"): only {:.0}% voiced frames -- PSOLA has little to work with", seg_idx, tts_word, voiced_pct));
-        }
-        if pitch_mark_count == 0 && voiced_region_count > 0 {
-            anomalies.push(format!("Segment {} (\"{}\"): voiced regions exist but no pitch marks were generated", seg_idx, tts_word));
-        }
-        if duration_error_ms.unsigned_abs() > 50 {
-            anomalies.push(format!("Segment {} (\"{}\"): obtained duration differs from target by {}ms", seg_idx, tts_word, duration_error_ms));
-        }
-        if grain_count == 0 && pitch_mark_count > 0 {
-            anomalies.push(format!("Segment {} (\"{}\"): pitch marks exist but no grains were extracted", seg_idx, tts_word));
+        if plan.kind == SegmentKind::Word {
+            if plan.alpha > 2.0 {
+                anomalies.push(format!("Segment {} (\"{}\"): alpha={:.2} is very high (>2x stretch)", seg_idx, label, plan.alpha));
+            }
+            if plan.alpha < 0.5 {
+                anomalies.push(format!("Segment {} (\"{}\"): alpha={:.2} is very low (<0.5x compression)", seg_idx, label, plan.alpha));
+            }
+            if voiced_pct < 10.0 && total_frames > 0 {
+                anomalies.push(format!("Segment {} (\"{}\"): only {:.0}% voiced frames", seg_idx, label, voiced_pct));
+            }
+            if pitch_mark_count == 0 && voiced_region_count > 0 {
+                anomalies.push(format!("Segment {} (\"{}\"): voiced regions but no pitch marks", seg_idx, label));
+            }
+            if duration_error_ms.unsigned_abs() > 50 {
+                anomalies.push(format!("Segment {} (\"{}\"): duration error {}ms", seg_idx, label, duration_error_ms));
+            }
         }
 
         segments.push(SegmentSummary {
             index: seg_idx,
-            tts_word,
-            original_word,
+            kind: format!("{:?}", plan.kind),
+            label,
             tts_duration_ms,
             original_duration_ms,
             alpha: plan.alpha,
@@ -302,6 +294,9 @@ fn build_pipeline_summary(ctx: &TempoPipelineContext) -> PipelineSummary {
         });
     }
 
+    let word_count = ctx.segment_plans.iter().filter(|p| p.kind == SegmentKind::Word).count();
+    let gap_count = ctx.segment_plans.iter().filter(|p| p.kind == SegmentKind::Gap).count();
+
     PipelineSummary {
         sample_rate_hz: rate,
         input_samples,
@@ -310,6 +305,8 @@ fn build_pipeline_summary(ctx: &TempoPipelineContext) -> PipelineSummary {
         output_duration_ms: samples_to_ms(output_samples, rate),
         duration_delta_ms: samples_to_ms(output_samples, rate) as i64 - samples_to_ms(input_samples, rate) as i64,
         segment_count: ctx.segment_plans.len(),
+        word_segment_count: word_count,
+        gap_segment_count: gap_count,
         segments,
         anomalies,
     }
@@ -323,17 +320,14 @@ fn build_narrative(ctx: &TempoPipelineContext, summary: &PipelineSummary) -> Str
     let mut md = String::with_capacity(4096);
 
     let _ = writeln!(md, "# Tempo Pipeline Debug Report\n");
-
-    // Input overview
     let _ = writeln!(md, "## Input\n");
     let _ = writeln!(md, "- **Sample rate:** {} Hz", summary.sample_rate_hz);
     let _ = writeln!(md, "- **Input duration:** {}ms ({} samples)", summary.input_duration_ms, summary.input_samples);
     let _ = writeln!(md, "- **TTS words:** {}", ctx.tts_timings.len());
     let _ = writeln!(md, "- **Original words:** {}", ctx.original_timings.len());
-    let _ = writeln!(md, "- **Segments created:** {}", summary.segment_count);
+    let _ = writeln!(md, "- **Segments:** {} total ({} Word, {} Gap)", summary.segment_count, summary.word_segment_count, summary.gap_segment_count);
     let _ = writeln!(md);
 
-    // Word alignment table
     if !ctx.tts_timings.is_empty() {
         let _ = writeln!(md, "### Word Alignment\n");
         let _ = writeln!(md, "| # | TTS Word | TTS (ms) | Original Word | Original (ms) | Delta (ms) |");
@@ -350,11 +344,19 @@ fn build_narrative(ctx: &TempoPipelineContext, summary: &PipelineSummary) -> Str
         let _ = writeln!(md);
     }
 
-    // Per-segment analysis
-    let _ = writeln!(md, "## Segment Analysis\n");
-
+    let _ = writeln!(md, "## Segment Timeline\n");
+    let _ = writeln!(md, "| # | Kind | Label | TTS (ms) | Original (ms) | Alpha | Target (ms) | Obtained (ms) | Error |");
+    let _ = writeln!(md, "|---|------|-------|----------|---------------|-------|-------------|---------------|-------|");
     for seg in &summary.segments {
-        let _ = writeln!(md, "### Segment {}: \"{}\"", seg.index, seg.tts_word);
+        let _ = writeln!(md, "| {} | {} | {} | {} | {} | {:.2} | {} | {} | {:+} |",
+            seg.index, seg.kind, seg.label, seg.tts_duration_ms, seg.original_duration_ms,
+            seg.alpha, seg.target_duration_ms, seg.obtained_duration_ms, seg.duration_error_ms);
+    }
+    let _ = writeln!(md);
+
+    let _ = writeln!(md, "## Word Segment Details\n");
+    for seg in summary.segments.iter().filter(|s| s.kind == "Word") {
+        let _ = writeln!(md, "### Segment {}: \"{}\"", seg.index, seg.label);
         let _ = writeln!(md);
 
         let direction = if seg.alpha > 1.01 {
@@ -362,95 +364,40 @@ fn build_narrative(ctx: &TempoPipelineContext, summary: &PipelineSummary) -> Str
         } else if seg.alpha < 0.99 {
             format!("compressing by {:.0}%", (1.0 - seg.alpha) * 100.0)
         } else {
-            "near identity (no significant change)".to_string()
+            "near identity".to_string()
         };
         let _ = writeln!(md, "- **Alpha:** {:.3} ({})", seg.alpha, direction);
-        let _ = writeln!(md, "- **TTS duration:** {}ms | **Original duration:** {}ms", seg.tts_duration_ms, seg.original_duration_ms);
-        let _ = writeln!(md, "- **Source (in samples):** {}ms | **Target:** {}ms | **Obtained:** {}ms (error: {:+}ms)",
+        let _ = writeln!(md, "- **Source:** {}ms | **Target:** {}ms | **Obtained:** {}ms (error: {:+}ms)",
             seg.source_duration_ms, seg.target_duration_ms, seg.obtained_duration_ms, seg.duration_error_ms);
-        let _ = writeln!(md);
-
-        let _ = writeln!(md, "**Frame Analysis:** {} frames, {} voiced ({:.0}%)",
-            seg.total_frames, seg.voiced_frames, seg.voiced_pct);
 
         if seg.f0_mean > 0.0 {
-            let _ = writeln!(md, "**Pitch (F0):** mean={:.1}Hz, range=[{:.1}, {:.1}]Hz",
-                seg.f0_mean, seg.f0_min, seg.f0_max);
-        } else {
-            let _ = writeln!(md, "**Pitch (F0):** no voiced frames detected");
+            let _ = writeln!(md, "- **F0:** mean={:.1}Hz range=[{:.1}, {:.1}]", seg.f0_mean, seg.f0_min, seg.f0_max);
         }
-
-        let _ = writeln!(md, "**Voiced regions:** {} | **Pitch marks:** {} | **Grains:** {} | **Placements:** {}",
-            seg.voiced_region_count, seg.pitch_mark_count, seg.grain_count, seg.synthesis_placement_count);
-
-        let _ = writeln!(md, "**Stretch regions:** {} VoicedPsola, {} Pause, {} KeepNearConstant",
+        let _ = writeln!(md, "- **Frames:** {} ({} voiced, {:.0}%)", seg.total_frames, seg.voiced_frames, seg.voiced_pct);
+        let _ = writeln!(md, "- **Marks:** {} pitch, {} grains, {} placements", seg.pitch_mark_count, seg.grain_count, seg.synthesis_placement_count);
+        let _ = writeln!(md, "- **Stretch:** {} VoicedPsola, {} Pause, {} Keep",
             seg.stretch_regions.voiced_psola, seg.stretch_regions.pause, seg.stretch_regions.keep_near_constant);
-
-        // Per-segment stretch region detail
-        if let Some(sp) = ctx.stretch_plans.get(seg.index) {
-            if !sp.regions.is_empty() {
-                let _ = writeln!(md);
-                let _ = writeln!(md, "| Region | Mode | Samples | Local Alpha | Duration (ms) |");
-                let _ = writeln!(md, "|--------|------|---------|-------------|---------------|");
-                for (ri, r) in sp.regions.iter().enumerate() {
-                    let len = r.end_sample.saturating_sub(r.start_sample);
-                    let mode_str = match r.mode {
-                        StretchMode::Pause => "Pause",
-                        StretchMode::VoicedPsola => "VoicedPsola",
-                        StretchMode::KeepNearConstant => "KeepNearConstant",
-                    };
-                    let _ = writeln!(md, "| {} | {} | {} | {:.3} | {} |",
-                        ri, mode_str, len, r.local_alpha, samples_to_ms(len, ctx.sample_rate_hz));
-                }
-            }
-        }
-
         let _ = writeln!(md);
     }
 
-    // Output summary
     let _ = writeln!(md, "## Output\n");
     let _ = writeln!(md, "- **Output duration:** {}ms ({} samples)", summary.output_duration_ms, summary.output_samples);
     let _ = writeln!(md, "- **Duration change:** {:+}ms", summary.duration_delta_ms);
     let _ = writeln!(md);
 
-    // Anomalies
     if !summary.anomalies.is_empty() {
         let _ = writeln!(md, "## Anomalies / Warnings\n");
         for a in &summary.anomalies {
             let _ = writeln!(md, "- {}", a);
         }
         let _ = writeln!(md);
-    } else {
-        let _ = writeln!(md, "## Anomalies / Warnings\n");
-        let _ = writeln!(md, "No anomalies detected.\n");
-    }
-
-    // Voiced region detail
-    let has_voiced = ctx.voiced_regions.iter().any(|vr| !vr.regions.is_empty());
-    if has_voiced {
-        let _ = writeln!(md, "## Voiced Region Detail\n");
-        for vr in &ctx.voiced_regions {
-            if vr.regions.is_empty() {
-                continue;
-            }
-            let _ = writeln!(md, "### Segment {}\n", vr.segment_index);
-            let _ = writeln!(md, "| Region | Start | End | Duration (ms) | Mean F0 (Hz) | Stability |");
-            let _ = writeln!(md, "|--------|-------|-----|---------------|-------------|-----------|");
-            for (ri, r) in vr.regions.iter().enumerate() {
-                let dur = samples_to_ms(r.end_sample.saturating_sub(r.start_sample), ctx.sample_rate_hz);
-                let _ = writeln!(md, "| {} | {} | {} | {} | {:.1} | {:.2} |",
-                    ri, r.start_sample, r.end_sample, dur, r.mean_f0, r.stability_score);
-            }
-            let _ = writeln!(md);
-        }
     }
 
     md
 }
 
 // ---------------------------------------------------------------------------
-// Tracing summary (preserved from original)
+// Tracing summary
 // ---------------------------------------------------------------------------
 
 fn log_tracing_summary(context: &TempoPipelineContext) {
@@ -460,46 +407,27 @@ fn log_tracing_summary(context: &TempoPipelineContext) {
         let source_duration_ms = samples_to_ms(plan.original_duration_samples, rate);
         let target_duration_ms = samples_to_ms(plan.target_duration_samples, rate);
 
-        let obtained_samples = context
-            .segment_audios
-            .get(seg_idx)
-            .map(|a| {
-                a.local_samples.len()
-                    .saturating_sub(a.margin_left)
-                    .saturating_sub(a.margin_right)
-            })
+        let obtained_samples = context.segment_audios.get(seg_idx)
+            .map(|a| a.rendered_samples.len())
             .unwrap_or(0);
         let obtained_duration_ms = samples_to_ms(obtained_samples, rate);
 
         let (f0_mean, f0_min, f0_max) = f0_stats(context, seg_idx);
-        let pitch_mark_count = context
-            .pitch_marks
-            .get(seg_idx)
-            .map(|pm| pm.marks.len())
-            .unwrap_or(0);
-
+        let pitch_mark_count = context.pitch_marks.get(seg_idx).map(|pm| pm.marks.len()).unwrap_or(0);
         let (total_frames, voiced_frames) = voiced_ratio(context, seg_idx);
-        let voiced_pct = if total_frames > 0 {
-            (voiced_frames as f32 / total_frames as f32) * 100.0
-        } else {
-            0.0
-        };
-
+        let voiced_pct = if total_frames > 0 { (voiced_frames as f32 / total_frames as f32) * 100.0 } else { 0.0 };
         let stretch_summary = stretch_breakdown_str(context, seg_idx);
 
         tracing::info!(
             segment_index = seg_idx,
+            kind = ?plan.kind,
             source_duration_ms,
             target_duration_ms,
             obtained_duration_ms,
             alpha = plan.alpha,
-            f0_mean,
-            f0_min,
-            f0_max,
+            f0_mean, f0_min, f0_max,
             pitch_mark_count,
-            total_frames,
-            voiced_frames,
-            voiced_pct,
+            total_frames, voiced_frames, voiced_pct,
             stretch_summary = %stretch_summary,
             "segment diagnostic report"
         );
@@ -515,8 +443,7 @@ fn log_tracing_summary(context: &TempoPipelineContext) {
     tracing::info!(
         segment_count = context.segment_plans.len(),
         output_samples = context.samples.len(),
-        output_duration_ms,
-        input_duration_ms,
+        output_duration_ms, input_duration_ms,
         sample_rate_hz = rate,
         "pipeline debug export complete"
     );
@@ -527,9 +454,7 @@ fn log_tracing_summary(context: &TempoPipelineContext) {
 // ---------------------------------------------------------------------------
 
 fn samples_to_ms(samples: usize, rate: u32) -> u64 {
-    if rate == 0 {
-        return 0;
-    }
+    if rate == 0 { return 0; }
     (samples as u64 * 1000) / rate as u64
 }
 
@@ -538,12 +463,8 @@ fn f0_stats(context: &TempoPipelineContext, seg_idx: usize) -> (f32, f32, f32) {
         Some(pd) => &pd.frames,
         None => return (0.0, 0.0, 0.0),
     };
-
     let voiced_f0: Vec<f32> = frames.iter().filter(|f| f.voiced).map(|f| f.f0_hz).collect();
-    if voiced_f0.is_empty() {
-        return (0.0, 0.0, 0.0);
-    }
-
+    if voiced_f0.is_empty() { return (0.0, 0.0, 0.0); }
     let mean = voiced_f0.iter().sum::<f32>() / voiced_f0.len() as f32;
     let min = voiced_f0.iter().cloned().fold(f32::MAX, f32::min);
     let max = voiced_f0.iter().cloned().fold(f32::MIN, f32::max);
@@ -566,11 +487,9 @@ fn stretch_breakdown(context: &TempoPipelineContext, seg_idx: usize) -> StretchB
         Some(p) => p,
         None => return StretchBreakdown { pause: 0, voiced_psola: 0, keep_near_constant: 0 },
     };
-
     let mut pause = 0usize;
     let mut voiced_psola = 0usize;
     let mut keep_near_constant = 0usize;
-
     for r in &plan.regions {
         match r.mode {
             StretchMode::Pause => pause += 1,
@@ -578,29 +497,20 @@ fn stretch_breakdown(context: &TempoPipelineContext, seg_idx: usize) -> StretchB
             StretchMode::KeepNearConstant => keep_near_constant += 1,
         }
     }
-
     StretchBreakdown { pause, voiced_psola, keep_near_constant }
 }
 
 fn stretch_breakdown_str(context: &TempoPipelineContext, seg_idx: usize) -> String {
     let b = stretch_breakdown(context, seg_idx);
-    format!(
-        "voiced_psola={} pause={} keep_near_constant={}",
-        b.voiced_psola, b.pause, b.keep_near_constant
-    )
+    format!("voiced_psola={} pause={} keep_near_constant={}", b.voiced_psola, b.pause, b.keep_near_constant)
 }
 
 fn untreated_samples(context: &TempoPipelineContext) -> usize {
-    if context.segment_plans.is_empty() {
-        return context.samples.len();
-    }
-
+    if context.segment_plans.is_empty() { return context.samples.len(); }
     let mut total = 0usize;
     let mut cursor = 0usize;
     for plan in &context.segment_plans {
-        if plan.start_sample > cursor {
-            total += plan.start_sample - cursor;
-        }
+        if plan.start_sample > cursor { total += plan.start_sample - cursor; }
         cursor = plan.end_sample;
     }
     total
@@ -611,8 +521,8 @@ mod tests {
     use super::*;
     use tempo_domain::{
         FrameMetrics, PitchFrame, PitchMark, SegmentAudio, SegmentFrameAnalysis,
-        SegmentPitchData, SegmentPitchMarks, SegmentPlan, SegmentStretchPlan, StretchMode,
-        StretchRegion, TempoPipelineContext, WordTiming,
+        SegmentKind, SegmentPitchData, SegmentPitchMarks, SegmentPlan, SegmentStretchPlan,
+        StretchMode, StretchRegion, TempoPipelineContext, WordTiming,
     };
 
     fn make_ctx() -> TempoPipelineContext {
@@ -623,20 +533,28 @@ mod tests {
             vec![WordTiming { word: "hello".into(), start_ms: 0, end_ms: 500, confidence: 0.90 }],
         );
         ctx.segment_plans = vec![SegmentPlan {
+            kind: SegmentKind::Word,
             start_sample: 0,
             end_sample: 1600,
             original_duration_samples: 1600,
             target_duration_samples: 2000,
             alpha: 1.25,
+            tts_start_ms: 0, tts_end_ms: 500,
+            original_start_ms: 0, original_end_ms: 600,
+            label: Some("hello".into()),
         }];
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: vec![0.5; 2000],
+            analysis_samples: vec![0.5; 2000],
+            rendered_samples: vec![0.5; 2000],
             global_start_sample: 0,
             global_end_sample: 1600,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: 1600,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: 2000,
             target_duration_samples: 2000,
             alpha: 1.25,
+            kind: SegmentKind::Word,
         }];
         ctx.frame_analyses = vec![SegmentFrameAnalysis {
             segment_index: 0,
@@ -684,20 +602,22 @@ mod tests {
     fn debug_export_succeeds_with_minimal_context() {
         let mut ctx = TempoPipelineContext::new(vec![0.0; 100], 16_000, Vec::new(), Vec::new());
         ctx.segment_plans = vec![SegmentPlan {
-            start_sample: 0,
-            end_sample: 100,
-            original_duration_samples: 100,
-            target_duration_samples: 100,
+            kind: SegmentKind::Word,
+            start_sample: 0, end_sample: 100,
+            original_duration_samples: 100, target_duration_samples: 100,
             alpha: 1.0,
+            tts_start_ms: 0, tts_end_ms: 0,
+            original_start_ms: 0, original_end_ms: 0,
+            label: None,
         }];
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: vec![0.0; 100],
-            global_start_sample: 0,
-            global_end_sample: 100,
-            margin_left: 0,
-            margin_right: 0,
-            target_duration_samples: 100,
-            alpha: 1.0,
+            analysis_samples: vec![0.0; 100],
+            rendered_samples: vec![0.0; 100],
+            global_start_sample: 0, global_end_sample: 100,
+            extract_start_sample: 0, extract_end_sample: 100,
+            useful_start_in_analysis: 0, useful_end_in_analysis: 100,
+            target_duration_samples: 100, alpha: 1.0,
+            kind: SegmentKind::Word,
         }];
 
         let stage = DebugExportStage;
@@ -737,9 +657,9 @@ mod tests {
         let narrative = build_narrative(&ctx, &summary);
         assert!(narrative.contains("# Tempo Pipeline Debug Report"));
         assert!(narrative.contains("## Input"));
-        assert!(narrative.contains("## Segment Analysis"));
         assert!(narrative.contains("## Output"));
         assert!(narrative.contains("hello"));
+        assert!(narrative.contains("Word"));
     }
 
     #[test]

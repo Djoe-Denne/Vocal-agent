@@ -1,5 +1,5 @@
 use tempo_domain::{
-    DomainError, SegmentSynthesisPlan, SynthesisPlacement, TempoPipelineContext,
+    DomainError, SegmentKind, SegmentSynthesisPlan, SynthesisPlacement, TempoPipelineContext,
     TempoPipelineStage,
 };
 
@@ -30,6 +30,17 @@ impl TempoPipelineStage for SynthesisMappingStage {
         let mut all_plans = Vec::with_capacity(context.synthesis_grids.len());
 
         for (seg_idx, grid) in context.synthesis_grids.iter().enumerate() {
+            if context.segment_audios.get(seg_idx)
+                .map(|a| a.kind == SegmentKind::Gap)
+                .unwrap_or(false)
+            {
+                all_plans.push(SegmentSynthesisPlan {
+                    segment_index: seg_idx,
+                    placements: Vec::new(),
+                });
+                continue;
+            }
+
             let grain_count = context.grains[seg_idx].grains.len();
             if grain_count == 0 {
                 all_plans.push(SegmentSynthesisPlan {
