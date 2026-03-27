@@ -22,25 +22,42 @@ pub struct TempoMatchOutput {
     pub sample_rate_hz: u32,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SegmentKind {
+    Word,
+    Gap,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentPlan {
+    pub kind: SegmentKind,
     pub start_sample: usize,
     pub end_sample: usize,
     pub original_duration_samples: usize,
     pub target_duration_samples: usize,
     pub alpha: f64,
+    pub tts_start_ms: u64,
+    pub tts_end_ms: u64,
+    pub original_start_ms: u64,
+    pub original_end_ms: u64,
+    pub label: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentAudio {
     #[serde(skip)]
-    pub local_samples: Vec<f32>,
+    pub analysis_samples: Vec<f32>,
+    #[serde(skip)]
+    pub rendered_samples: Vec<f32>,
     pub global_start_sample: usize,
     pub global_end_sample: usize,
-    pub margin_left: usize,
-    pub margin_right: usize,
+    pub extract_start_sample: usize,
+    pub extract_end_sample: usize,
+    pub useful_start_in_analysis: usize,
+    pub useful_end_in_analysis: usize,
     pub target_duration_samples: usize,
     pub alpha: f64,
+    pub kind: SegmentKind,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

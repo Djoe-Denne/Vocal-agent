@@ -1,5 +1,6 @@
 use tempo_domain::{
-    DomainError, FrameMetrics, SegmentFrameAnalysis, TempoPipelineContext, TempoPipelineStage,
+    DomainError, FrameMetrics, SegmentFrameAnalysis, SegmentKind, TempoPipelineContext,
+    TempoPipelineStage,
 };
 
 const DEFAULT_FRAME_MS: u64 = 30;
@@ -7,11 +8,13 @@ const DEFAULT_HOP_MS: u64 = 10;
 const ENERGY_FLOOR: f32 = 1e-10;
 const ZCR_VOICED_THRESHOLD: f32 = 0.15;
 const ENERGY_SILENCE_THRESHOLD: f32 = 1e-6;
+const PERIODICITY_VOICED_THRESHOLD: f32 = 0.4;
 
 /// Step 4: frame-by-frame analysis of energy, voicing, and periodicity.
 ///
-/// For each extracted segment, slides a window over the local samples and
+/// For each extracted segment, slides a window over the analysis samples and
 /// computes per-frame metrics used by later synthesis stages.
+/// Gap segments are skipped (empty analysis pushed to keep indexing aligned).
 pub struct FrameAnalysisStage {
     frame_length_ms: u64,
     hop_ms: u64,
@@ -52,7 +55,17 @@ impl TempoPipelineStage for FrameAnalysisStage {
         let mut analyses = Vec::with_capacity(context.segment_audios.len());
 
         for (idx, seg) in context.segment_audios.iter().enumerate() {
-            let samples = &seg.local_samples;
+            if seg.kind == SegmentKind::Gap {
+                analyses.push(SegmentFrameAnalysis {
+                    segment_index: idx,
+                    frame_length_samples: frame_len,
+                    hop_samples: hop,
+                    frames: Vec::new(),
+                });
+                continue;
+            }
+
+            let samples = &seg.analysis_samples;
             let mut frames = Vec::new();
 
             let mut offset = 0usize;
@@ -62,8 +75,9 @@ impl TempoPipelineStage for FrameAnalysisStage {
                 let zcr = zero_crossing_rate(frame);
                 let periodicity = normalized_autocorrelation_peak(frame, rate);
 
-                let is_voiced =
-                    energy > ENERGY_SILENCE_THRESHOLD && zcr < ZCR_VOICED_THRESHOLD;
+                let is_voiced = energy > ENERGY_SILENCE_THRESHOLD
+                    && zcr < ZCR_VOICED_THRESHOLD
+                    && periodicity > PERIODICITY_VOICED_THRESHOLD;
 
                 frames.push(FrameMetrics {
                     energy,
@@ -128,8 +142,8 @@ fn normalized_autocorrelation_peak(frame: &[f32], sample_rate_hz: u32) -> f32 {
         return 0.0;
     }
 
-    let min_lag = (sample_rate_hz as usize) / 500; // 500 Hz upper bound
-    let max_lag = ((sample_rate_hz as usize) / 50).min(n - 1); // 50 Hz lower bound
+    let min_lag = (sample_rate_hz as usize) / 500;
+    let max_lag = ((sample_rate_hz as usize) / 50).min(n - 1);
 
     if min_lag >= max_lag || max_lag >= n {
         return 0.0;
@@ -166,18 +180,23 @@ fn normalized_autocorrelation_peak(frame: &[f32], sample_rate_hz: u32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempo_domain::{SegmentAudio, TempoPipelineContext};
+    use tempo_domain::{SegmentAudio, SegmentKind, TempoPipelineContext};
 
     fn ctx_with_segment(samples: Vec<f32>, rate: u32) -> TempoPipelineContext {
+        let n = samples.len();
         let mut ctx = TempoPipelineContext::new(samples.clone(), rate, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: samples,
+            analysis_samples: samples,
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
-            global_end_sample: 0,
-            margin_left: 0,
-            margin_right: 0,
-            target_duration_samples: 0,
+            global_end_sample: n,
+            extract_start_sample: 0,
+            extract_end_sample: n,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
+            target_duration_samples: n,
             alpha: 1.0,
+            kind: SegmentKind::Word,
         }];
         ctx
     }
@@ -185,7 +204,7 @@ mod tests {
     #[test]
     fn produces_frames_for_valid_segment() {
         let rate = 16_000u32;
-        let samples = vec![0.5; 4800]; // 300ms at 16kHz
+        let samples = vec![0.5; 4800];
         let mut ctx = ctx_with_segment(samples, rate);
         let stage = FrameAnalysisStage::default();
         stage.execute(&mut ctx).expect("should succeed");
@@ -193,8 +212,8 @@ mod tests {
         assert_eq!(ctx.frame_analyses.len(), 1);
         let analysis = &ctx.frame_analyses[0];
         assert!(analysis.frames.len() > 1);
-        assert_eq!(analysis.frame_length_samples, 480); // 30ms * 16k
-        assert_eq!(analysis.hop_samples, 160); // 10ms * 16k
+        assert_eq!(analysis.frame_length_samples, 480);
+        assert_eq!(analysis.hop_samples, 160);
     }
 
     #[test]
@@ -241,6 +260,27 @@ mod tests {
     }
 
     #[test]
+    fn gap_segment_produces_empty_analysis() {
+        let mut ctx = TempoPipelineContext::new(vec![0.0; 1600], 16_000, Vec::new(), Vec::new());
+        ctx.segment_audios = vec![SegmentAudio {
+            analysis_samples: vec![0.0; 800],
+            rendered_samples: vec![0.0; 800],
+            global_start_sample: 0,
+            global_end_sample: 800,
+            extract_start_sample: 0,
+            extract_end_sample: 800,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: 800,
+            target_duration_samples: 800,
+            alpha: 1.0,
+            kind: SegmentKind::Gap,
+        }];
+        let stage = FrameAnalysisStage::default();
+        stage.execute(&mut ctx).expect("should succeed");
+        assert!(ctx.frame_analyses[0].frames.is_empty());
+    }
+
+    #[test]
     fn rms_energy_returns_positive() {
         let frame = vec![0.5, -0.5, 0.3, -0.3];
         let e = rms_energy(&frame);
@@ -259,5 +299,31 @@ mod tests {
         let frame = vec![0.5; 100];
         let zcr = zero_crossing_rate(&frame);
         assert_eq!(zcr, 0.0);
+    }
+
+    #[test]
+    fn noisy_signal_with_low_periodicity_is_unvoiced() {
+        let rate = 16_000u32;
+        // Pseudo-random noise via LCG -- high energy, zero-mean, no periodicity
+        let mut rng: u32 = 12345;
+        let samples: Vec<f32> = (0..4800)
+            .map(|_| {
+                rng = rng.wrapping_mul(1103515245).wrapping_add(12345);
+                let val = ((rng >> 16) as i16) as f32 / i16::MAX as f32;
+                val * 0.6
+            })
+            .collect();
+        let mut ctx = ctx_with_segment(samples, rate);
+        let stage = FrameAnalysisStage::default();
+        stage.execute(&mut ctx).expect("should succeed");
+
+        let voiced_count = ctx.frame_analyses[0].frames.iter().filter(|f| f.is_voiced).count();
+        let total = ctx.frame_analyses[0].frames.len();
+        let voiced_pct = if total > 0 { voiced_count as f32 / total as f32 } else { 0.0 };
+        assert!(
+            voiced_pct < 0.3,
+            "noisy signal should have few voiced frames, got {:.0}%",
+            voiced_pct * 100.0
+        );
     }
 }

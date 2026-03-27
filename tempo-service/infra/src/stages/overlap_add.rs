@@ -1,4 +1,4 @@
-use tempo_domain::{DomainError, TempoPipelineContext, TempoPipelineStage};
+use tempo_domain::{DomainError, SegmentKind, TempoPipelineContext, TempoPipelineStage};
 
 const WEIGHT_FLOOR: f32 = 1e-8;
 
@@ -7,7 +7,8 @@ const WEIGHT_FLOOR: f32 = 1e-8;
 /// Creates an output buffer for each segment, places each windowed grain at
 /// its synthesis position, accumulates Hann window weights in a parallel
 /// buffer, and normalizes by dividing signal by weight sum. The resynthesized
-/// samples replace `segment_audios[i].local_samples`.
+/// samples are written to `segment_audios[i].rendered_samples`.
+/// Gap segments are skipped (they already have rendered_samples from extraction).
 pub struct OverlapAddStage;
 
 impl TempoPipelineStage for OverlapAddStage {
@@ -33,10 +34,14 @@ impl TempoPipelineStage for OverlapAddStage {
         }
 
         for (seg_idx, plan) in context.synthesis_plans.iter().enumerate() {
+            if context.segment_audios[seg_idx].kind == SegmentKind::Gap {
+                continue;
+            }
+
             let grains = &context.grains[seg_idx].grains;
             let target_len = context.segment_audios[seg_idx].target_duration_samples;
             let output_len = if target_len > 0 { target_len } else {
-                context.segment_audios[seg_idx].local_samples.len()
+                context.segment_audios[seg_idx].analysis_samples.len()
             };
 
             let mut output = vec![0.0f32; output_len];
@@ -72,28 +77,52 @@ impl TempoPipelineStage for OverlapAddStage {
                 }
             }
 
-            // Normalize by window weight sum
             for (sample, weight) in output.iter_mut().zip(weights.iter()) {
                 if *weight > WEIGHT_FLOOR {
                     *sample /= *weight;
                 }
             }
 
-            // Fill any gaps where no grains were placed with original samples
-            let original = &context.segment_audios[seg_idx].local_samples;
+            // Time-mapped gap-fill: for uncovered samples, map output position
+            // back to analysis position proportionally
+            let analysis = &context.segment_audios[seg_idx].analysis_samples;
+            let analysis_len = analysis.len();
             let mut gap_fill_count = 0usize;
-            for (i, weight) in weights.iter().enumerate() {
-                if *weight <= WEIGHT_FLOOR && i < original.len() {
-                    output[i] = original[i];
-                    gap_fill_count += 1;
+            if analysis_len > 0 && output_len > 0 {
+                let ratio = analysis_len as f64 / output_len as f64;
+                for (i, weight) in weights.iter().enumerate() {
+                    if *weight <= WEIGHT_FLOOR {
+                        let mapped_idx = ((i as f64 * ratio).round() as usize).min(analysis_len - 1);
+                        output[i] = analysis[mapped_idx];
+                        gap_fill_count += 1;
+                    }
                 }
             }
+
+            // Weight coverage diagnostics
+            let covered = weights.iter().filter(|&&w| w > WEIGHT_FLOOR).count();
+            let coverage_pct = if output_len > 0 { (covered as f32 / output_len as f32) * 100.0 } else { 0.0 };
+
+            let covered_weights: Vec<f32> = weights.iter().filter(|&&w| w > WEIGHT_FLOOR).copied().collect();
+            let weight_min = covered_weights.iter().cloned().fold(f32::MAX, f32::min);
+            let weight_max = covered_weights.iter().cloned().fold(0.0f32, f32::max);
+            let weight_mean = if covered_weights.is_empty() { 0.0 } else {
+                covered_weights.iter().sum::<f32>() / covered_weights.len() as f32
+            };
 
             let gap_fill_pct = if output_len > 0 {
                 (gap_fill_count as f32 / output_len as f32) * 100.0
             } else {
                 0.0
             };
+
+            if coverage_pct < 50.0 {
+                tracing::warn!(
+                    segment_index = seg_idx,
+                    coverage_pct,
+                    "overlap-add: low grain coverage, output may have artifacts"
+                );
+            }
 
             tracing::debug!(
                 segment_index = seg_idx,
@@ -102,10 +131,14 @@ impl TempoPipelineStage for OverlapAddStage {
                 grain_count = grains.len(),
                 gap_fill_samples = gap_fill_count,
                 gap_fill_pct,
+                coverage_pct,
+                weight_min = if covered_weights.is_empty() { 0.0 } else { weight_min },
+                weight_max,
+                weight_mean,
                 "overlap-add complete for segment"
             );
 
-            context.segment_audios[seg_idx].local_samples = output;
+            context.segment_audios[seg_idx].rendered_samples = output;
         }
 
         tracing::debug!(
@@ -136,8 +169,8 @@ fn hann_window(len: usize) -> Vec<f32> {
 mod tests {
     use super::*;
     use tempo_domain::{
-        Grain, SegmentAudio, SegmentGrains, SegmentSynthesisPlan, SynthesisPlacement,
-        TempoPipelineContext,
+        Grain, SegmentAudio, SegmentGrains, SegmentKind, SegmentSynthesisPlan,
+        SynthesisPlacement, TempoPipelineContext,
     };
 
     fn make_ctx(
@@ -153,13 +186,17 @@ mod tests {
             Vec::new(),
         );
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: vec![0.1; original_len],
+            analysis_samples: vec![0.1; original_len],
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
             global_end_sample: original_len,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: original_len,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: original_len,
             target_duration_samples: target_len,
             alpha: target_len as f64 / original_len as f64,
+            kind: SegmentKind::Word,
         }];
         ctx.grains = vec![SegmentGrains {
             segment_index: 0,
@@ -194,7 +231,7 @@ mod tests {
         let stage = OverlapAddStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        assert_eq!(ctx.segment_audios[0].local_samples.len(), 300);
+        assert_eq!(ctx.segment_audios[0].rendered_samples.len(), 300);
     }
 
     #[test]
@@ -216,8 +253,7 @@ mod tests {
         let stage = OverlapAddStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        let output = &ctx.segment_audios[0].local_samples;
-        // Overlap region (~80-160) should have finite, reasonable values
+        let output = &ctx.segment_audios[0].rendered_samples;
         for &s in &output[80..160] {
             assert!(s.is_finite());
             assert!(s.abs() < 2.0);
@@ -225,33 +261,31 @@ mod tests {
     }
 
     #[test]
-    fn gaps_filled_with_original_samples() {
+    fn gaps_filled_with_analysis_samples() {
         let placement = SynthesisPlacement {
             output_center_sample: 80,
             source_grain_index: 0,
         };
         let grain = make_grain(0, 80, 40);
         let mut ctx = make_ctx(200, 200, vec![grain], vec![placement]);
-        // Set original to a known value
-        for s in &mut ctx.segment_audios[0].local_samples {
+        for s in &mut ctx.segment_audios[0].analysis_samples {
             *s = 0.42;
         }
 
         let stage = OverlapAddStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        // Far from the grain placement, original values should be preserved
-        assert!((ctx.segment_audios[0].local_samples[190] - 0.42).abs() < 1e-6);
+        assert!((ctx.segment_audios[0].rendered_samples[190] - 0.42).abs() < 1e-6);
     }
 
     #[test]
-    fn empty_placements_preserve_original() {
+    fn empty_placements_preserve_analysis() {
         let mut ctx = make_ctx(200, 200, vec![], vec![]);
 
         let stage = OverlapAddStage;
         stage.execute(&mut ctx).expect("should succeed");
 
-        for &s in &ctx.segment_audios[0].local_samples {
+        for &s in &ctx.segment_audios[0].rendered_samples {
             assert!((s - 0.1).abs() < 1e-6);
         }
     }

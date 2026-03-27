@@ -1,5 +1,5 @@
 use tempo_domain::{
-    DomainError, Grain, SegmentGrains, TempoPipelineContext, TempoPipelineStage,
+    DomainError, Grain, SegmentGrains, SegmentKind, TempoPipelineContext, TempoPipelineStage,
 };
 
 const PERIOD_MULTIPLIER: f32 = 2.0;
@@ -30,9 +30,19 @@ impl TempoPipelineStage for GrainExtractionStage {
         let mut all_grains = Vec::with_capacity(context.pitch_marks.len());
 
         for (seg_idx, seg_marks) in context.pitch_marks.iter().enumerate() {
-            let samples = &context.segment_audios[seg_idx].local_samples;
+            if context.segment_audios[seg_idx].kind == SegmentKind::Gap {
+                all_grains.push(SegmentGrains {
+                    segment_index: seg_idx,
+                    grains: Vec::new(),
+                });
+                continue;
+            }
+
+            let samples = &context.segment_audios[seg_idx].analysis_samples;
             let n = samples.len();
             let mut grains = Vec::with_capacity(seg_marks.marks.len());
+            let mut short_grain_count = 0usize;
+            let mut edge_clamped_count = 0usize;
 
             for (mark_idx, mark) in seg_marks.marks.iter().enumerate() {
                 let half_len =
@@ -42,14 +52,25 @@ impl TempoPipelineStage for GrainExtractionStage {
                 }
 
                 let center = mark.sample_index;
-                let left = center.saturating_sub(half_len);
-                let right = (center + half_len).min(n);
+                let ideal_left = center.saturating_sub(half_len);
+                let ideal_right = center + half_len;
+                let left = ideal_left;
+                let right = ideal_right.min(n);
 
                 if right <= left {
                     continue;
                 }
 
+                if left == 0 || right == n {
+                    edge_clamped_count += 1;
+                }
+
                 let grain_len = right - left;
+                let expected_len = (mark.local_period_samples * PERIOD_MULTIPLIER).round() as usize;
+                if grain_len < expected_len / 2 {
+                    short_grain_count += 1;
+                }
+
                 let window = hann_window(grain_len);
                 let windowed: Vec<f32> = samples[left..right]
                     .iter()
@@ -62,6 +83,16 @@ impl TempoPipelineStage for GrainExtractionStage {
                     center_sample: center,
                     windowed_samples: windowed,
                 });
+            }
+
+            if short_grain_count > 0 || edge_clamped_count > 0 {
+                tracing::debug!(
+                    segment_index = seg_idx,
+                    short_grain_count,
+                    edge_clamped_count,
+                    total_grains = grains.len(),
+                    "grain extraction: some grains were short or edge-clamped"
+                );
             }
 
             tracing::trace!(
@@ -104,19 +135,23 @@ fn hann_window(len: usize) -> Vec<f32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempo_domain::{PitchMark, SegmentAudio, SegmentPitchMarks, TempoPipelineContext};
+    use tempo_domain::{PitchMark, SegmentAudio, SegmentKind, SegmentPitchMarks, TempoPipelineContext};
 
     fn make_ctx(samples: Vec<f32>, marks: Vec<PitchMark>) -> TempoPipelineContext {
         let n = samples.len();
         let mut ctx = TempoPipelineContext::new(samples.clone(), 16_000, Vec::new(), Vec::new());
         ctx.segment_audios = vec![SegmentAudio {
-            local_samples: samples,
+            analysis_samples: samples,
+            rendered_samples: Vec::new(),
             global_start_sample: 0,
             global_end_sample: n,
-            margin_left: 0,
-            margin_right: 0,
+            extract_start_sample: 0,
+            extract_end_sample: n,
+            useful_start_in_analysis: 0,
+            useful_end_in_analysis: n,
             target_duration_samples: n,
             alpha: 1.0,
+            kind: SegmentKind::Word,
         }];
         ctx.pitch_marks = vec![SegmentPitchMarks {
             segment_index: 0,
