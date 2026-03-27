@@ -3,12 +3,14 @@ use tempo_domain::{
     TempoPipelineContext, TempoPipelineStage,
 };
 
-/// Step 10: build output-side pitch marks from the stretch plan.
+/// Step 10: build output-side synthesis marks from the stretch plan.
 ///
-/// For VoicedPsola regions, output marks are spaced by `period / local_alpha`.
-/// For Pause regions, mark spacing is scaled by `local_alpha`.
-/// For KeepNearConstant regions, analysis marks are copied directly.
-/// All marks reference back to the nearest analysis mark index.
+/// For VoicedPsola regions, output marks are spaced by the **source pitch
+/// period** (T0) -- NOT divided by alpha. Time-stretching is achieved by the
+/// input-to-output position mapping, which naturally duplicates or skips
+/// analysis marks. This preserves pitch while changing duration.
+/// For Pause regions, marks are proportionally mapped.
+/// For KeepNearConstant regions, analysis marks are proportionally mapped.
 pub struct SynthesisGridStage;
 
 impl TempoPipelineStage for SynthesisGridStage {
@@ -70,9 +72,6 @@ impl TempoPipelineStage for SynthesisGridStage {
                             .sum::<f32>()
                             / region_analysis.len() as f32;
 
-                        let synth_period =
-                            (mean_period as f64 / region.local_alpha.max(0.01)).max(1.0);
-
                         let region_output_len = (region.end_sample - region.start_sample) as f64
                             * region.local_alpha;
                         let region_output_end = output_cursor + region_output_len;
@@ -83,11 +82,18 @@ impl TempoPipelineStage for SynthesisGridStage {
                             let input_pos = region.start_sample as f64
                                 + (pos - output_cursor) / region.local_alpha.max(0.01);
                             let nearest = nearest_mark_index(analysis_marks, input_pos);
+
+                            let local_t0 = analysis_marks.get(nearest)
+                                .map(|m| m.local_period_samples as f64)
+                                .unwrap_or(mean_period as f64)
+                                .max(1.0);
+
                             output_marks.push(SynthesisMark {
                                 output_sample_index: out_idx,
                                 mapped_analysis_mark_index: nearest,
                             });
-                            pos += synth_period;
+
+                            pos += local_t0;
                         }
 
                         output_cursor = region_output_end;
@@ -245,7 +251,7 @@ mod tests {
         stage.execute(&mut ctx).expect("should succeed");
 
         let grid = &ctx.synthesis_grids[0];
-        // With alpha=1.5, output should have more marks than input (10)
+        // Output region = 800*1.5 = 1200 samples, T0=80 -> ~15 marks
         assert!(
             grid.marks.len() > 10,
             "expected more than 10 output marks, got {}",
@@ -268,6 +274,7 @@ mod tests {
         stage.execute(&mut ctx).expect("should succeed");
 
         let grid = &ctx.synthesis_grids[0];
+        // Output region = 1600*0.6 = 960 samples, T0=80 -> ~12 marks < 20
         assert!(
             grid.marks.len() < 20,
             "expected fewer than 20 output marks, got {}",
@@ -298,6 +305,38 @@ mod tests {
                 w[1].output_sample_index
             );
         }
+    }
+
+    #[test]
+    fn pitch_preserved_when_stretching() {
+        let period = 80.0f32;
+        let alpha = 1.25;
+        let marks: Vec<PitchMark> = (0..10).map(|i| pm(i * 80, period)).collect();
+        let regions = vec![StretchRegion {
+            start_sample: 0,
+            end_sample: 800,
+            local_alpha: alpha,
+            mode: StretchMode::VoicedPsola,
+        }];
+        let mut ctx = make_ctx(800, alpha, marks, regions);
+
+        let stage = SynthesisGridStage;
+        stage.execute(&mut ctx).expect("should succeed");
+
+        let grid = &ctx.synthesis_grids[0];
+        assert!(grid.marks.len() >= 2, "need at least 2 marks for spacing check");
+
+        let spacings: Vec<usize> = grid.marks.windows(2)
+            .map(|w| w[1].output_sample_index - w[0].output_sample_index)
+            .collect();
+        let avg_spacing = spacings.iter().sum::<usize>() as f32 / spacings.len() as f32;
+
+        // Output mark spacing should be ~T0 (80), NOT T0/alpha (64)
+        assert!(
+            (avg_spacing - period).abs() < period * 0.15,
+            "avg spacing {} should be near source period {} (not {})",
+            avg_spacing, period, period / alpha as f32
+        );
     }
 
     #[test]

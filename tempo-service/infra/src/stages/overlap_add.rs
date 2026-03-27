@@ -83,21 +83,46 @@ impl TempoPipelineStage for OverlapAddStage {
                 }
             }
 
-            // Fill gaps with analysis samples (mapped through useful coordinates)
+            // Time-mapped gap-fill: for uncovered samples, map output position
+            // back to analysis position proportionally
             let analysis = &context.segment_audios[seg_idx].analysis_samples;
+            let analysis_len = analysis.len();
             let mut gap_fill_count = 0usize;
-            for (i, weight) in weights.iter().enumerate() {
-                if *weight <= WEIGHT_FLOOR && i < analysis.len() {
-                    output[i] = analysis[i];
-                    gap_fill_count += 1;
+            if analysis_len > 0 && output_len > 0 {
+                let ratio = analysis_len as f64 / output_len as f64;
+                for (i, weight) in weights.iter().enumerate() {
+                    if *weight <= WEIGHT_FLOOR {
+                        let mapped_idx = ((i as f64 * ratio).round() as usize).min(analysis_len - 1);
+                        output[i] = analysis[mapped_idx];
+                        gap_fill_count += 1;
+                    }
                 }
             }
+
+            // Weight coverage diagnostics
+            let covered = weights.iter().filter(|&&w| w > WEIGHT_FLOOR).count();
+            let coverage_pct = if output_len > 0 { (covered as f32 / output_len as f32) * 100.0 } else { 0.0 };
+
+            let covered_weights: Vec<f32> = weights.iter().filter(|&&w| w > WEIGHT_FLOOR).copied().collect();
+            let weight_min = covered_weights.iter().cloned().fold(f32::MAX, f32::min);
+            let weight_max = covered_weights.iter().cloned().fold(0.0f32, f32::max);
+            let weight_mean = if covered_weights.is_empty() { 0.0 } else {
+                covered_weights.iter().sum::<f32>() / covered_weights.len() as f32
+            };
 
             let gap_fill_pct = if output_len > 0 {
                 (gap_fill_count as f32 / output_len as f32) * 100.0
             } else {
                 0.0
             };
+
+            if coverage_pct < 50.0 {
+                tracing::warn!(
+                    segment_index = seg_idx,
+                    coverage_pct,
+                    "overlap-add: low grain coverage, output may have artifacts"
+                );
+            }
 
             tracing::debug!(
                 segment_index = seg_idx,
@@ -106,6 +131,10 @@ impl TempoPipelineStage for OverlapAddStage {
                 grain_count = grains.len(),
                 gap_fill_samples = gap_fill_count,
                 gap_fill_pct,
+                coverage_pct,
+                weight_min = if covered_weights.is_empty() { 0.0 } else { weight_min },
+                weight_max,
+                weight_mean,
                 "overlap-add complete for segment"
             );
 

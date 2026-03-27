@@ -41,6 +41,8 @@ impl TempoPipelineStage for GrainExtractionStage {
             let samples = &context.segment_audios[seg_idx].analysis_samples;
             let n = samples.len();
             let mut grains = Vec::with_capacity(seg_marks.marks.len());
+            let mut short_grain_count = 0usize;
+            let mut edge_clamped_count = 0usize;
 
             for (mark_idx, mark) in seg_marks.marks.iter().enumerate() {
                 let half_len =
@@ -50,14 +52,25 @@ impl TempoPipelineStage for GrainExtractionStage {
                 }
 
                 let center = mark.sample_index;
-                let left = center.saturating_sub(half_len);
-                let right = (center + half_len).min(n);
+                let ideal_left = center.saturating_sub(half_len);
+                let ideal_right = center + half_len;
+                let left = ideal_left;
+                let right = ideal_right.min(n);
 
                 if right <= left {
                     continue;
                 }
 
+                if left == 0 || right == n {
+                    edge_clamped_count += 1;
+                }
+
                 let grain_len = right - left;
+                let expected_len = (mark.local_period_samples * PERIOD_MULTIPLIER).round() as usize;
+                if grain_len < expected_len / 2 {
+                    short_grain_count += 1;
+                }
+
                 let window = hann_window(grain_len);
                 let windowed: Vec<f32> = samples[left..right]
                     .iter()
@@ -70,6 +83,16 @@ impl TempoPipelineStage for GrainExtractionStage {
                     center_sample: center,
                     windowed_samples: windowed,
                 });
+            }
+
+            if short_grain_count > 0 || edge_clamped_count > 0 {
+                tracing::debug!(
+                    segment_index = seg_idx,
+                    short_grain_count,
+                    edge_clamped_count,
+                    total_grains = grains.len(),
+                    "grain extraction: some grains were short or edge-clamped"
+                );
             }
 
             tracing::trace!(

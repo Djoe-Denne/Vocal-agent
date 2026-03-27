@@ -3,11 +3,14 @@ use tempo_domain::{
     TempoPipelineStage,
 };
 
+const MAX_CONSECUTIVE_REPEATS: usize = 5;
+
 /// Step 11: map each synthesis mark to a source grain.
 ///
 /// Ensures monotone progression through the analysis grains: grain indices
 /// never go backwards. Duplication (stretch) and skipping (compress) are
-/// both allowed.
+/// both allowed. Includes an anti-buzz guard that advances the grain index
+/// when the same grain is repeated more than MAX_CONSECUTIVE_REPEATS times.
 pub struct SynthesisMappingStage;
 
 impl TempoPipelineStage for SynthesisMappingStage {
@@ -52,26 +55,42 @@ impl TempoPipelineStage for SynthesisMappingStage {
 
             let mut placements = Vec::with_capacity(grid.marks.len());
             let mut min_grain_idx = 0usize;
+            let mut consecutive_count = 0usize;
+            let mut last_grain_idx: Option<usize> = None;
 
             for synth_mark in &grid.marks {
                 let analysis_idx = synth_mark.mapped_analysis_mark_index;
 
-                // Find the grain whose analysis_mark_index best matches,
-                // constrained to never go below min_grain_idx (monotone).
-                let grain_idx =
+                let mut grain_idx =
                     find_grain_for_analysis_mark(&context.grains[seg_idx].grains, analysis_idx, min_grain_idx);
+
+                // Anti-buzz: if the same grain is repeated too many times, advance
+                if Some(grain_idx) == last_grain_idx {
+                    consecutive_count += 1;
+                    if consecutive_count >= MAX_CONSECUTIVE_REPEATS && grain_idx + 1 < grain_count {
+                        grain_idx += 1;
+                        consecutive_count = 0;
+                    }
+                } else {
+                    consecutive_count = 0;
+                }
 
                 placements.push(SynthesisPlacement {
                     output_center_sample: synth_mark.output_sample_index,
                     source_grain_index: grain_idx,
                 });
 
+                last_grain_idx = Some(grain_idx);
                 min_grain_idx = grain_idx;
             }
 
-            tracing::trace!(
+            let (max_run, total_runs) = repetition_stats(&placements);
+
+            tracing::debug!(
                 segment_index = seg_idx,
                 placement_count = placements.len(),
+                max_consecutive_repeats = max_run,
+                repeated_runs = total_runs,
                 "synthesis mapping complete for segment"
             );
 
@@ -126,6 +145,38 @@ fn find_grain_for_analysis_mark(
     }
 
     best_idx
+}
+
+/// Compute max consecutive run length and total number of runs > 1 for the same grain.
+fn repetition_stats(placements: &[SynthesisPlacement]) -> (usize, usize) {
+    if placements.is_empty() {
+        return (0, 0);
+    }
+    let mut max_run = 1usize;
+    let mut current_run = 1usize;
+    let mut total_runs = 0usize;
+
+    for w in placements.windows(2) {
+        if w[1].source_grain_index == w[0].source_grain_index {
+            current_run += 1;
+        } else {
+            if current_run > 1 {
+                total_runs += 1;
+            }
+            if current_run > max_run {
+                max_run = current_run;
+            }
+            current_run = 1;
+        }
+    }
+    if current_run > 1 {
+        total_runs += 1;
+    }
+    if current_run > max_run {
+        max_run = current_run;
+    }
+
+    (max_run, total_runs)
 }
 
 #[cfg(test)]
