@@ -51,6 +51,11 @@ impl PipelineStage for AudioTransformStage {
         context.session_id = response.session_id;
         context.audio.samples = response.samples;
         context.audio.sample_rate_hz = response.sample_rate_hz;
+        tracing::debug!(
+            sample_rate_hz = context.audio.sample_rate_hz,
+            sample_count = context.audio.samples.len(),
+            "audio_transform: received new audio"
+        );
         if let Some(metadata) = response.metadata {
             context.set_extension(
                 "audio.transform",

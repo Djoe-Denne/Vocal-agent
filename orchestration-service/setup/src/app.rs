@@ -102,9 +102,7 @@ impl Application {
             Arc::new(DiagnosticDumpStage::new("04_tempo_result", &dump_dir));
         let dump_final: Arc<dyn PipelineStage> =
             Arc::new(DiagnosticDumpStage::new("05_final", &dump_dir));
-        let tempo_stage: Arc<dyn PipelineStage> = Arc::new(TempoMatchStage::new(
-            request_timeout(&config.service.tempo),
-        ));
+        let tempo_stage: Arc<dyn PipelineStage> = Arc::new(TempoMatchStage::new());
         let loader = GrpcPipelineStepLoader {
             audio_transform: audio_stage,
             asr_transcribe: asr_stage,

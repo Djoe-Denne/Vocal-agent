@@ -7,4 +7,11 @@ license.workspace = true
 
 [dependencies]
 orchestration-domain = { path = "../domain" }
+tempo-domain = { path = "../../tempo-service/domain" }
+tempo-infra = { path = "../../tempo-service/infra" }
 async-trait = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

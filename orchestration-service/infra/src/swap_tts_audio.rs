@@ -50,6 +50,12 @@ impl PipelineStage for SwapTtsAudioStage {
         context.audio.samples = samples;
         context.audio.sample_rate_hz = rate;
 
+        tracing::debug!(
+            sample_rate_hz = context.audio.sample_rate_hz,
+            sample_count = context.audio.samples.len(),
+            "swap_tts_audio: new audio active"
+        );
+
         context.transcript = None;
         context.aligned_words.clear();
 

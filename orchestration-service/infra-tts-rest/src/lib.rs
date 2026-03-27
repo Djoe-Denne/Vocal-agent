@@ -83,6 +83,11 @@ impl PipelineStage for TtsRestSynthesizeStage {
             word_timings,
         };
 
+        tracing::debug!(
+            sample_rate_hz = tts_output.sample_rate_hz,
+            sample_count = tts_output.samples.len(),
+            "tts_synthesize: received new audio"
+        );
         context.set_extension("tts.sample_count", json!(tts_output.samples.len()));
         context.set_extension("tts.sample_rate_hz", json!(tts_output.sample_rate_hz));
         context.set_extension("tts.endpoint_uri", json!(self.endpoint_uri));

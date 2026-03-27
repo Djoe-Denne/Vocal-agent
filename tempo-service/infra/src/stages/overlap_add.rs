@@ -99,6 +99,7 @@ impl TempoPipelineStage for OverlapAddStage {
 
         tracing::debug!(
             segment_count = context.synthesis_plans.len(),
+            sample_rate_hz = context.sample_rate_hz,
             "overlap-add resynthesis complete"
         );
 
