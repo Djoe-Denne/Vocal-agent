@@ -52,9 +52,23 @@ impl TempoPipelineStage for VoicedZoneStage {
                 }
             }
 
-            tracing::trace!(
+            let total_voiced_samples: usize = regions.iter()
+                .map(|r| r.end_sample.saturating_sub(r.start_sample))
+                .sum();
+            let avg_stability: f32 = if regions.is_empty() {
+                0.0
+            } else {
+                regions.iter().map(|r| r.stability_score).sum::<f32>() / regions.len() as f32
+            };
+
+            tracing::debug!(
                 segment_index = pitch_data.segment_index,
                 region_count = regions.len(),
+                total_voiced_samples,
+                avg_stability,
+                min_zone_samples,
+                pitched_frames = pitch_data.frames.len(),
+                voiced_frames = pitch_data.frames.iter().filter(|f| f.voiced).count(),
                 "voiced zone construction complete for segment"
             );
 

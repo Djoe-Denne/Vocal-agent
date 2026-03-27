@@ -50,7 +50,7 @@ host = "127.0.0.1"
 port = 8085
 tls_enabled = false
 connect_timeout_ms = 3000
-request_timeout_ms = 30000
+request_timeout_ms = 120000
 max_decoding_message_bytes = 67108864
 max_encoding_message_bytes = 67108864
 

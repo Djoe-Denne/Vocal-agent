@@ -1,23 +1,22 @@
+use std::time::Duration;
+
 use async_trait::async_trait;
 use orchestration_domain::{DomainError, PipelineContext, PipelineStage};
-use tempo_domain::{TempoMatchPort, TempoMatchRequest};
-use tempo_infra::TempoMatchAdapter;
+use tempo_grpc_server::{pb, TempoServiceClient};
+use tonic::transport::{Channel, Endpoint};
+use tonic::Request;
 
 pub struct TempoMatchStage {
-    adapter: TempoMatchAdapter,
+    client: TempoServiceClient<Channel>,
+    request_timeout: Duration,
 }
 
 impl TempoMatchStage {
-    pub fn new() -> Self {
+    pub fn new(client: TempoServiceClient<Channel>, request_timeout: Duration) -> Self {
         Self {
-            adapter: TempoMatchAdapter::new(),
+            client,
+            request_timeout,
         }
-    }
-}
-
-impl Default for TempoMatchStage {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -28,16 +27,13 @@ impl PipelineStage for TempoMatchStage {
     }
 
     async fn execute(&self, context: &mut PipelineContext) -> Result<(), DomainError> {
-        let tts_samples = context.audio.samples.clone();
-        let tts_sample_rate_hz = context.audio.sample_rate_hz;
-
-        if tts_samples.is_empty() {
+        if context.audio.samples.is_empty() {
             return Err(DomainError::internal_error(
                 "tempo_match: audio samples are empty",
             ));
         }
 
-        let tts_timings = map_orch_to_tempo_timings(&context.aligned_words);
+        let tts_timings = map_orch_to_proto_timings(&context.aligned_words);
         if tts_timings.is_empty() {
             return Err(DomainError::internal_error(
                 "tempo_match: no TTS aligned words available",
@@ -52,42 +48,64 @@ impl PipelineStage for TempoMatchStage {
         }
 
         tracing::debug!(
-            tts_sample_count = tts_samples.len(),
-            tts_sample_rate_hz,
+            tts_sample_count = context.audio.samples.len(),
+            tts_sample_rate_hz = context.audio.sample_rate_hz,
             tts_timing_count = tts_timings.len(),
             original_timing_count = original_timings.len(),
-            "tempo_match: starting tempo adjustment"
+            "tempo_match: starting gRPC tempo adjustment"
         );
 
-        let request = TempoMatchRequest {
-            tts_samples,
-            tts_sample_rate_hz,
+        let request = pb::MatchTempoRequest {
+            tts_samples: context.audio.samples.clone(),
+            tts_sample_rate_hz: context.audio.sample_rate_hz,
             original_timings,
             tts_timings,
+            session_id: Some(context.session_id.clone()),
         };
 
-        let output = self.adapter.match_tempo(request).await?;
+        let mut client = self.client.clone();
+        let rpc = client.match_tempo(Request::new(request));
+        let response = tokio::time::timeout(self.request_timeout, rpc)
+            .await
+            .map_err(|_| DomainError::external_service_error("tempo", "gRPC request timed out"))?
+            .map_err(|status| map_status("tempo", status))?
+            .into_inner();
 
         tracing::debug!(
             input_samples = context.audio.samples.len(),
-            output_samples = output.samples.len(),
-            output_sample_rate_hz = output.sample_rate_hz,
-            "tempo_match: tempo adjustment complete"
+            output_samples = response.samples.len(),
+            sample_rate_hz = response.sample_rate_hz,
+            "tempo_match: gRPC tempo adjustment complete"
         );
 
-        context.audio.samples = output.samples;
-        context.audio.sample_rate_hz = output.sample_rate_hz;
+        context.audio.samples = response.samples;
+        context.audio.sample_rate_hz = response.sample_rate_hz;
 
         Ok(())
     }
 }
 
-fn map_orch_to_tempo_timings(
-    words: &[orchestration_domain::WordTiming],
-) -> Vec<tempo_domain::WordTiming> {
+pub async fn connect_tempo_client(
+    endpoint_uri: &str,
+    connect_timeout: Duration,
+    max_decoding_message_bytes: usize,
+    max_encoding_message_bytes: usize,
+) -> Result<TempoServiceClient<Channel>, DomainError> {
+    let endpoint = Endpoint::from_shared(endpoint_uri.to_string())
+        .map_err(|err| DomainError::internal_error(&format!("invalid tempo endpoint: {err}")))?
+        .connect_timeout(connect_timeout);
+    let channel = endpoint.connect().await.map_err(|err| {
+        DomainError::external_service_error("tempo", &format!("failed to connect: {err}"))
+    })?;
+    Ok(TempoServiceClient::new(channel)
+        .max_decoding_message_size(max_decoding_message_bytes)
+        .max_encoding_message_size(max_encoding_message_bytes))
+}
+
+fn map_orch_to_proto_timings(words: &[orchestration_domain::WordTiming]) -> Vec<pb::WordTiming> {
     words
         .iter()
-        .map(|w| tempo_domain::WordTiming {
+        .map(|w| pb::WordTiming {
             word: w.word.clone(),
             start_ms: w.start_ms,
             end_ms: w.end_ms,
@@ -98,7 +116,7 @@ fn map_orch_to_tempo_timings(
 
 fn extract_original_timings(
     context: &PipelineContext,
-) -> Result<Vec<tempo_domain::WordTiming>, DomainError> {
+) -> Result<Vec<pb::WordTiming>, DomainError> {
     let timings_value = context
         .extension("original.timings")
         .ok_or_else(|| {
@@ -114,107 +132,20 @@ fn extract_original_timings(
             ))
         })?;
 
-    Ok(map_orch_to_tempo_timings(&orch_timings))
+    Ok(map_orch_to_proto_timings(&orch_timings))
+}
+
+fn map_status(service: &str, status: tonic::Status) -> DomainError {
+    DomainError::external_service_error(
+        service,
+        &format!("gRPC {}: {}", status.code(), status.message()),
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use orchestration_domain::{PipelineContext, WordTiming};
-
-    fn make_context_with_data() -> PipelineContext {
-        let rate = 16_000u32;
-        let freq = 200.0f32;
-        let duration_samples = 8000usize; // 500ms
-        let samples: Vec<f32> = (0..duration_samples)
-            .map(|i| (2.0 * std::f32::consts::PI * freq * i as f32 / rate as f32).sin() * 0.5)
-            .collect();
-
-        let mut context = PipelineContext::new("test-session", None);
-        context.audio.samples = samples;
-        context.audio.sample_rate_hz = rate;
-
-        context.aligned_words = vec![
-            WordTiming {
-                word: "hello".to_string(),
-                start_ms: 0,
-                end_ms: 250,
-                confidence: 0.95,
-            },
-            WordTiming {
-                word: "world".to_string(),
-                start_ms: 250,
-                end_ms: 500,
-                confidence: 0.90,
-            },
-        ];
-
-        let original_words = vec![
-            WordTiming {
-                word: "hello".to_string(),
-                start_ms: 0,
-                end_ms: 300,
-                confidence: 0.95,
-            },
-            WordTiming {
-                word: "world".to_string(),
-                start_ms: 300,
-                end_ms: 650,
-                confidence: 0.90,
-            },
-        ];
-        let timings_json = serde_json::to_value(&original_words).expect("serialize");
-        context.set_extension("original.timings", timings_json);
-
-        context
-    }
-
-    #[tokio::test]
-    async fn stage_runs_and_produces_output() {
-        let stage = TempoMatchStage::new();
-        let mut context = make_context_with_data();
-        let input_len = context.audio.samples.len();
-
-        let result = stage.execute(&mut context).await;
-        assert!(result.is_ok(), "stage should succeed: {:?}", result.err());
-        assert!(!context.audio.samples.is_empty(), "output should not be empty");
-        assert_eq!(context.audio.sample_rate_hz, 16_000);
-        tracing::info!(
-            input_samples = input_len,
-            output_samples = context.audio.samples.len(),
-            "tempo match test completed"
-        );
-    }
-
-    #[tokio::test]
-    async fn stage_fails_without_audio() {
-        let stage = TempoMatchStage::new();
-        let mut context = make_context_with_data();
-        context.audio.samples.clear();
-
-        let result = stage.execute(&mut context).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn stage_fails_without_tts_timings() {
-        let stage = TempoMatchStage::new();
-        let mut context = make_context_with_data();
-        context.aligned_words.clear();
-
-        let result = stage.execute(&mut context).await;
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn stage_fails_without_original_timings() {
-        let stage = TempoMatchStage::new();
-        let mut context = make_context_with_data();
-        context.take_extension("original.timings");
-
-        let result = stage.execute(&mut context).await;
-        assert!(result.is_err());
-    }
+    use orchestration_domain::WordTiming;
 
     #[test]
     fn timing_mapping_preserves_fields() {
@@ -225,11 +156,35 @@ mod tests {
             confidence: 0.85,
         }];
 
-        let mapped = map_orch_to_tempo_timings(&orch);
+        let mapped = map_orch_to_proto_timings(&orch);
         assert_eq!(mapped.len(), 1);
         assert_eq!(mapped[0].word, "test");
         assert_eq!(mapped[0].start_ms, 100);
         assert_eq!(mapped[0].end_ms, 200);
         assert_eq!(mapped[0].confidence, 0.85);
+    }
+
+    #[test]
+    fn extract_timings_fails_without_extension() {
+        let context = PipelineContext::new("session", None);
+        let result = extract_original_timings(&context);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn extract_timings_deserializes_from_extension() {
+        let mut context = PipelineContext::new("session", None);
+        let words = vec![WordTiming {
+            word: "hello".to_string(),
+            start_ms: 0,
+            end_ms: 500,
+            confidence: 0.95,
+        }];
+        let json = serde_json::to_value(&words).expect("serialize");
+        context.set_extension("original.timings", json);
+
+        let result = extract_original_timings(&context).expect("should succeed");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].word, "hello");
     }
 }

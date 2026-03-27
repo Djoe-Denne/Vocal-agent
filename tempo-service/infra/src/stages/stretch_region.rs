@@ -58,10 +58,25 @@ impl TempoPipelineStage for StretchRegionStage {
 
             distribute_alpha(&mut raw_regions, seg_audio.alpha);
 
-            tracing::trace!(
+            let mut pause_samples = 0usize;
+            let mut voiced_samples = 0usize;
+            let mut keep_samples = 0usize;
+            for r in &raw_regions {
+                let len = r.end_sample.saturating_sub(r.start_sample);
+                match r.mode {
+                    StretchMode::Pause => pause_samples += len,
+                    StretchMode::VoicedPsola => voiced_samples += len,
+                    StretchMode::KeepNearConstant => keep_samples += len,
+                }
+            }
+
+            tracing::debug!(
                 segment_index = seg_idx,
                 region_count = raw_regions.len(),
                 segment_alpha = seg_audio.alpha,
+                pause_samples,
+                voiced_psola_samples = voiced_samples,
+                keep_near_constant_samples = keep_samples,
                 "stretch regions defined for segment"
             );
 

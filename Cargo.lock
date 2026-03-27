@@ -2572,9 +2572,9 @@ dependencies = [
  "async-trait",
  "orchestration-domain",
  "serde_json",
- "tempo-domain",
- "tempo-infra",
+ "tempo-grpc_server",
  "tokio",
+ "tonic",
  "tracing",
 ]
 
@@ -4093,13 +4093,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "tempo-grpc_server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "prost",
+ "protoc-bin-vendored",
+ "rustycog-command",
+ "rustycog-config",
+ "tempo-application",
+ "tempo-domain",
+ "tokio",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+]
+
+[[package]]
 name = "tempo-infra"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "serde",
+ "serde_json",
  "tempo-domain",
  "tokio",
  "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -4113,8 +4134,10 @@ dependencies = [
  "tempo-application",
  "tempo-configuration",
  "tempo-domain",
+ "tempo-grpc_server",
  "tempo-infra",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

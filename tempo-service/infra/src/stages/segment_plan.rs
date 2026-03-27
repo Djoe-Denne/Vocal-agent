@@ -66,6 +66,19 @@ impl TempoPipelineStage for SegmentPlanStage {
                 1.0
             };
 
+            tracing::debug!(
+                segment_index = plans.len(),
+                tts_word = %tts.word,
+                original_word = %original.word,
+                tts_ms = tts_duration_ms,
+                original_ms = original_duration_ms,
+                delta_ms = original_duration_ms as i64 - tts_duration_ms as i64,
+                alpha = alpha,
+                start_sample,
+                end_sample,
+                "segment_plan: word pair mapped"
+            );
+
             plans.push(SegmentPlan {
                 start_sample,
                 end_sample,
@@ -83,6 +96,9 @@ impl TempoPipelineStage for SegmentPlanStage {
 
         tracing::debug!(
             segment_count = plans.len(),
+            total_samples = total_samples,
+            tts_word_count = context.tts_timings.len(),
+            original_word_count = context.original_timings.len(),
             "treatment segments constructed"
         );
 

@@ -1,3 +1,4 @@
+use std::time::Instant;
 use tempo_domain::{DomainError, TempoPipelineContext, TempoPipelineStage};
 
 pub struct TempoPipelineEngine {
@@ -10,19 +11,32 @@ impl TempoPipelineEngine {
     }
 
     pub fn run(&self, context: &mut TempoPipelineContext) -> Result<(), DomainError> {
-        for stage in &self.stages {
+        let pipeline_start = Instant::now();
+
+        for (index, stage) in self.stages.iter().enumerate() {
             let name = stage.name();
-            tracing::debug!(stage = name, "stage_start");
+            tracing::debug!(stage = name, index, "stage_start");
+            let stage_start = Instant::now();
             match stage.execute(context) {
                 Ok(()) => {
-                    tracing::debug!(stage = name, "stage_end");
+                    let elapsed_us = stage_start.elapsed().as_micros();
+                    tracing::debug!(stage = name, index, elapsed_us = elapsed_us as u64, "stage_end");
                 }
                 Err(err) => {
-                    tracing::error!(stage = name, error = %err, "stage_error");
+                    let elapsed_us = stage_start.elapsed().as_micros();
+                    tracing::error!(stage = name, index, elapsed_us = elapsed_us as u64, error = %err, "stage_error");
                     return Err(err);
                 }
             }
         }
+
+        let total_us = pipeline_start.elapsed().as_micros();
+        tracing::info!(
+            total_elapsed_us = total_us as u64,
+            stage_count = self.stages.len(),
+            "pipeline_complete"
+        );
+
         Ok(())
     }
 

@@ -59,10 +59,21 @@ pub async fn redub_audio_wav(
     );
 
     let result = execute_transcribe(&state, request).await?;
-    let tts_output = result.tts_output.ok_or_else(|| HttpError::Internal {
-        message: "pipeline completed without tts output".to_string(),
-    })?;
-    let wav = encode_wav_f32_mono(&tts_output.samples, tts_output.sample_rate_hz);
+    let (samples, sample_rate_hz) = if let Some(ref audio) = result.output_audio {
+        (&audio.samples, audio.sample_rate_hz)
+    } else if let Some(ref tts) = result.tts_output {
+        (&tts.samples, tts.sample_rate_hz)
+    } else {
+        return Err(HttpError::Internal {
+            message: "pipeline completed without output audio".to_string(),
+        });
+    };
+    tracing::info!(
+        sample_count = samples.len(),
+        sample_rate_hz,
+        "redub: encoding output audio"
+    );
+    let wav = encode_wav_f32_mono(samples, sample_rate_hz);
 
     Ok((
         StatusCode::OK,

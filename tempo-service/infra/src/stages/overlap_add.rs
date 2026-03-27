@@ -81,16 +81,27 @@ impl TempoPipelineStage for OverlapAddStage {
 
             // Fill any gaps where no grains were placed with original samples
             let original = &context.segment_audios[seg_idx].local_samples;
+            let mut gap_fill_count = 0usize;
             for (i, weight) in weights.iter().enumerate() {
                 if *weight <= WEIGHT_FLOOR && i < original.len() {
                     output[i] = original[i];
+                    gap_fill_count += 1;
                 }
             }
 
-            tracing::trace!(
+            let gap_fill_pct = if output_len > 0 {
+                (gap_fill_count as f32 / output_len as f32) * 100.0
+            } else {
+                0.0
+            };
+
+            tracing::debug!(
                 segment_index = seg_idx,
                 output_len = output.len(),
                 placement_count = plan.placements.len(),
+                grain_count = grains.len(),
+                gap_fill_samples = gap_fill_count,
+                gap_fill_pct,
                 "overlap-add complete for segment"
             );
 

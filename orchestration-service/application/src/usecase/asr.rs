@@ -68,12 +68,14 @@ impl AsrUseCase for AsrUseCaseImpl {
 
         let aligned_words = extract_alignment_words(&context);
         let tts_output = context.tts_output.clone();
+        let output_audio = Some(context.audio.clone());
         let response = TranscribeAudioResponse {
             session_id: context.session_id,
             transcript,
             aligned_words,
             text,
             tts_output,
+            output_audio,
         };
 
         tracing::debug!(

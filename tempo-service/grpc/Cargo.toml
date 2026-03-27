@@ -1,19 +1,25 @@
 [package]
-name = "tempo-setup"
+name = "tempo-grpc_server"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+build = "build.rs"
 
 [dependencies]
 tempo-application = { path = "../application" }
-tempo-configuration = { path = "../configuration" }
 tempo-domain = { path = "../domain" }
-tempo-grpc_server = { path = "../grpc" }
-tempo-infra = { path = "../infra" }
 anyhow = { workspace = true }
-async-trait = { workspace = true }
+prost = { workspace = true }
 rustycog-command = { workspace = true }
 rustycog-config = { workspace = true }
-tokio = { workspace = true }
+tonic = { workspace = true }
+tonic-prost = { workspace = true }
 tracing = { workspace = true }
+
+[build-dependencies]
+protoc-bin-vendored = { workspace = true }
+tonic-prost-build = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

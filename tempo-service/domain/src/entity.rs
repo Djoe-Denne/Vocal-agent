@@ -22,7 +22,7 @@ pub struct TempoMatchOutput {
     pub sample_rate_hz: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentPlan {
     pub start_sample: usize,
     pub end_sample: usize,
@@ -31,8 +31,9 @@ pub struct SegmentPlan {
     pub alpha: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentAudio {
+    #[serde(skip)]
     pub local_samples: Vec<f32>,
     pub global_start_sample: usize,
     pub global_end_sample: usize,
@@ -42,14 +43,14 @@ pub struct SegmentAudio {
     pub alpha: f64,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FrameMetrics {
     pub energy: f32,
     pub is_voiced: bool,
     pub periodicity: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentFrameAnalysis {
     pub segment_index: usize,
     pub frame_length_samples: usize,
@@ -59,7 +60,7 @@ pub struct SegmentFrameAnalysis {
 
 // --- Phase 2 entities ---
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PitchFrame {
     pub center_sample: usize,
     pub voiced: bool,
@@ -67,13 +68,13 @@ pub struct PitchFrame {
     pub period_samples: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentPitchData {
     pub segment_index: usize,
     pub frames: Vec<PitchFrame>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct VoicedRegion {
     pub start_sample: usize,
     pub end_sample: usize,
@@ -82,33 +83,33 @@ pub struct VoicedRegion {
     pub stability_score: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentVoicedRegions {
     pub segment_index: usize,
     pub regions: Vec<VoicedRegion>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PitchMark {
     pub sample_index: usize,
     pub local_period_samples: f32,
     pub confidence: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentPitchMarks {
     pub segment_index: usize,
     pub marks: Vec<PitchMark>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum StretchMode {
     Pause,
     VoicedPsola,
     KeepNearConstant,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StretchRegion {
     pub start_sample: usize,
     pub end_sample: usize,
@@ -116,7 +117,7 @@ pub struct StretchRegion {
     pub mode: StretchMode,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentStretchPlan {
     pub segment_index: usize,
     pub regions: Vec<StretchRegion>,
@@ -124,38 +125,39 @@ pub struct SegmentStretchPlan {
 
 // --- Phase 3 entities ---
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grain {
     pub analysis_mark_index: usize,
     pub center_sample: usize,
+    #[serde(skip)]
     pub windowed_samples: Vec<f32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentGrains {
     pub segment_index: usize,
     pub grains: Vec<Grain>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesisMark {
     pub output_sample_index: usize,
     pub mapped_analysis_mark_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentSynthesisGrid {
     pub segment_index: usize,
     pub marks: Vec<SynthesisMark>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SynthesisPlacement {
     pub output_center_sample: usize,
     pub source_grain_index: usize,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SegmentSynthesisPlan {
     pub segment_index: usize,
     pub placements: Vec<SynthesisPlacement>,

@@ -4,6 +4,7 @@ use anyhow::Error;
 use tempo_application::{TempoCommandRegistryFactory, TempoMatchUseCase, TempoMatchUseCaseImpl};
 use tempo_configuration::AppConfig;
 use tempo_domain::TempoMatchPort;
+use tempo_grpc_server::serve_grpc;
 use tempo_infra::TempoMatchAdapter;
 use rustycog_command::GenericCommandService;
 use rustycog_config::ServerConfig;
@@ -41,7 +42,15 @@ impl Application {
         Self::new_with_matcher(config, matcher).await
     }
 
-    pub async fn run(self, _server_config: ServerConfig) -> Result<(), Error> {
-        anyhow::bail!("no transport configured")
+    pub async fn run(self, server_config: ServerConfig) -> Result<(), Error> {
+        tracing::info!(
+            host = %server_config.host,
+            port = server_config.port,
+            "starting tempo gRPC server"
+        );
+
+        serve_grpc(self.command_service, server_config)
+            .await
+            .map_err(|err| anyhow::anyhow!("server startup failed: {err}"))
     }
 }

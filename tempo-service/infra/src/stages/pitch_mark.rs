@@ -57,9 +57,23 @@ impl TempoPipelineStage for PitchMarkStage {
 
             segment_marks.sort_by_key(|m| m.sample_index);
 
-            tracing::trace!(
+            let avg_confidence: f32 = if segment_marks.is_empty() {
+                0.0
+            } else {
+                segment_marks.iter().map(|m| m.confidence).sum::<f32>() / segment_marks.len() as f32
+            };
+            let avg_period: f32 = if segment_marks.is_empty() {
+                0.0
+            } else {
+                segment_marks.iter().map(|m| m.local_period_samples).sum::<f32>() / segment_marks.len() as f32
+            };
+
+            tracing::debug!(
                 segment_index = seg_idx,
                 mark_count = segment_marks.len(),
+                voiced_region_count = seg_regions.regions.len(),
+                avg_confidence,
+                avg_period,
                 "pitch marks generated for segment"
             );
 
@@ -117,7 +131,8 @@ fn generate_marks_for_region(
             local_period_samples: lp,
             confidence: peak_confidence(region_samples, snapped, search_radius),
         });
-        pos = snapped as f64 + lp as f64;
+        let next = (target as f64 + lp as f64).max(pos + 1.0);
+        pos = next;
     }
 
     // Propagate left from seed
@@ -131,7 +146,8 @@ fn generate_marks_for_region(
             local_period_samples: lp,
             confidence: peak_confidence(region_samples, snapped, search_radius),
         });
-        pos = snapped as f64 - lp as f64;
+        let next = (target as f64 - lp as f64).min(pos - 1.0);
+        pos = next;
     }
 
     marks.sort_by_key(|m| m.sample_index);

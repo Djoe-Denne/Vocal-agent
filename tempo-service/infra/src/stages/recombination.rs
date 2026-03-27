@@ -33,13 +33,11 @@ impl TempoPipelineStage for RecombinationStage {
                 None => continue,
             };
 
-            // Copy unmodified audio before this segment
             let seg_start = plan.start_sample.min(original.len());
             if read_cursor < seg_start {
                 output.extend_from_slice(&original[read_cursor..seg_start]);
             }
 
-            // Extract the useful portion of local_samples (trim margins)
             let margin_left = seg_audio.margin_left;
             let margin_right = seg_audio.margin_right;
             let local = &seg_audio.local_samples;
@@ -48,8 +46,17 @@ impl TempoPipelineStage for RecombinationStage {
 
             if useful_end > useful_start {
                 let segment_samples = &local[useful_start..useful_end];
+                let actual_len = segment_samples.len();
 
-                // Apply boundary crossfade at the start
+                tracing::debug!(
+                    segment_index = seg_idx,
+                    target_samples = plan.target_duration_samples,
+                    actual_samples = actual_len,
+                    delta_samples = actual_len as i64 - plan.target_duration_samples as i64,
+                    original_range = format_args!("{}..{}", plan.start_sample, plan.end_sample),
+                    "recombination: segment splice"
+                );
+
                 let boundary_start = output.len();
                 output.extend_from_slice(segment_samples);
 
@@ -61,7 +68,6 @@ impl TempoPipelineStage for RecombinationStage {
             read_cursor = plan.end_sample.min(original.len());
         }
 
-        // Copy remaining unmodified audio after the last segment
         if read_cursor < original.len() {
             let boundary = output.len();
             output.extend_from_slice(&original[read_cursor..]);
@@ -72,10 +78,17 @@ impl TempoPipelineStage for RecombinationStage {
 
         let original_len = original.len();
         let output_len = output.len();
+        let rate = context.sample_rate_hz;
+        let original_ms = if rate > 0 { (original_len as u64 * 1000) / rate as u64 } else { 0 };
+        let output_ms = if rate > 0 { (output_len as u64 * 1000) / rate as u64 } else { 0 };
+
         tracing::debug!(
             original_len,
             output_len,
-            sample_rate_hz = context.sample_rate_hz,
+            original_duration_ms = original_ms,
+            output_duration_ms = output_ms,
+            delta_ms = output_ms as i64 - original_ms as i64,
+            sample_rate_hz = rate,
             segment_count = context.segment_audios.len(),
             "global recombination complete"
         );

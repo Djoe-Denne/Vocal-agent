@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-use orchestration_domain::{Transcript, TtsOutput, WordTiming};
+use orchestration_domain::{AudioChunk, Transcript, TtsOutput, WordTiming};
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct TranscribeAudioRequest {
@@ -22,4 +22,6 @@ pub struct TranscribeAudioResponse {
     pub aligned_words: Vec<WordTiming>,
     pub text: String,
     pub tts_output: Option<TtsOutput>,
+    #[serde(skip)]
+    pub output_audio: Option<AudioChunk>,
 }
