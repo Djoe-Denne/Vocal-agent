@@ -41,6 +41,7 @@ fn run() -> Result<(), String> {
         "audio-service",
         "asr-service",
         "alignment-service",
+        "tempo-service",
         "orchestration-service",
     ]);
 
@@ -64,7 +65,18 @@ fn run() -> Result<(), String> {
             package: "alignment-setup",
             bin: "alignment-service",
             working_dir: "alignment-service",
-            feature: if use_cuda { Some("wav2vec2-cuda") } else { None },
+            feature: if use_cuda {
+                Some("wav2vec2-onnx-wgpu-bp")
+            } else {
+                None
+            },
+        },
+        ServiceSpec {
+            name: "tempo-service",
+            package: "tempo-setup",
+            bin: "tempo-service",
+            working_dir: "tempo-service",
+            feature: None,
         },
         ServiceSpec {
             name: "orchestration-service",

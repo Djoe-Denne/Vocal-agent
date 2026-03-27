@@ -19,8 +19,10 @@ asr-service          (binary entry point, feature flags)
 ├── http             (Axum HTTP handlers)
 ├── infra-audio      (audio preprocessing: clamp, resample)
 ├── infra-asr-whisper (Whisper transcription adapter + pipeline stage)
-└── infra-alignment  (Wav2Vec2 CTC forced aligner + pipeline stage)
+└── infra-alignment  (Wav2Vec2 alignment adapter + pipeline stage)
 ```
+
+Wav2Vec2 model and forced-alignment internals now live in the standalone `wav2vec2-rs` crate, while service infra crates only wrap them behind ports/adapters.
 
 Each runtime capability is its own crate, gated behind a Cargo feature flag.
 Nothing compiles unless you opt in.
@@ -60,28 +62,41 @@ cargo run -p asr-service
 Requires a Whisper GGML model file at the path set in your config
 (default: `models/ggml-large-v3-q5_0.bin`).
 
-### 3. Run with Wav2Vec2 forced alignment
+### 3. Run with Wav2Vec2 forced alignment (ONNX default)
 
 ```powershell
 $env:RUN_ENV="development"
-cargo run -p asr-service --features wav2vec2-runtime
+cargo run -p alignment-setup
+# Optional: ONNX inference + BP/DP on WGPU
+# cargo run -p alignment-setup --features wav2vec2-onnx-wgpu-bp
 ```
 
 Requires three files for the Wav2Vec2 model (defaults shown):
 
 | File | Default path | Source |
 |---|---|---|
-| Safetensors weights | `models/wav2vec2-fr.safetensors` | [bofenghuang/asr-wav2vec2-ctc-french](https://huggingface.co/bofenghuang/asr-wav2vec2-ctc-french) |
-| Config | `models/wav2vec2-config.json` | Same repo, `config.json` |
-| Vocabulary | `models/wav2vec2-vocab.json` | Same repo, `vocab.json` |
+| ONNX weights | `models/asr-wav2vec2-ctc-french-onnx/model.onnx` | [bofenghuang/asr-wav2vec2-ctc-french](https://huggingface.co/bofenghuang/asr-wav2vec2-ctc-french) |
+| Config | `models/asr-wav2vec2-ctc-french-onnx/config.json` | Same repo, `config.json` |
+| Vocabulary | `models/asr-wav2vec2-ctc-french-onnx/vocab.json` | Same repo, `vocab.json` |
+
+Need to convert a Hugging Face/local CTC model to ONNX first?
+Use the conversion script from `wav2vec2-rs`:
+`https://github.com/Djoe-Denne/wav2vec2-rs/blob/main/scripts/export_ctc_model_to_onnx.py`
+
+```powershell
+python scripts/export_ctc_model_to_onnx.py `
+  --model-source hf `
+  --model-id-or-path bofenghuang/asr-wav2vec2-ctc-french `
+  --output-path models/asr-wav2vec2-ctc-french-onnx/model.onnx
+```
 
 Override paths in your TOML config:
 
 ```toml
 [service.pipeline.plugins.wav2vec2]
-model_path  = "models/wav2vec2-fr.safetensors"
-config_path = "models/wav2vec2-config.json"
-vocab_path  = "models/wav2vec2-vocab.json"
+model_path  = "models/asr-wav2vec2-ctc-french-onnx/model.onnx"
+config_path = "models/asr-wav2vec2-ctc-french-onnx/config.json"
+vocab_path  = "models/asr-wav2vec2-ctc-french-onnx/vocab.json"
 device      = "cpu"   # or "cuda"
 ```
 
@@ -96,8 +111,8 @@ Combine features as needed with `--features flag1,flag2`.
 | `whisper-cuda` | Whisper transcription + NVIDIA CUDA backend |
 | `whisper-vulkan` | Whisper transcription + Vulkan backend |
 | `whisper-openblas` | Whisper transcription + OpenBLAS backend |
-| `wav2vec2-runtime` | Wav2Vec2 CTC forced alignment (CPU) |
-| `wav2vec2-cuda` | Wav2Vec2 + CUDA tensor backend |
+| `wav2vec2-runtime` | Wav2Vec2 CTC forced alignment (ONNX backend by default) |
+| `wav2vec2-onnx-wgpu-bp` | Wav2Vec2 ONNX inference on CUDA + BP/DP via WGPU |
 
 Whisper transcription is always enabled; extra Whisper features only select backend/runtime acceleration.
 
@@ -134,7 +149,7 @@ target_sample_rate_hz = 16000
 | `audio_clamp` | *(always available)* | `infra-audio` |
 | `resample` | *(always available)* | `infra-audio` |
 | `whisper_transcription` | *(always available)* | `infra-asr-whisper` |
-| `wav2vec2_alignment` | `wav2vec2-runtime` | `infra-alignment` |
+| `wav2vec2_alignment` | *(ONNX default; optional `wav2vec2-onnx-wgpu-bp`)* | `infra-alignment` |
 
 ---
 

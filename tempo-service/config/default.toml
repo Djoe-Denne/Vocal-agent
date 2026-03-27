@@ -1,0 +1,10 @@
+[server]
+host = "127.0.0.1"
+port = 8085
+
+[logging]
+level = "info"
+filter = "warn,tempo_=info,rustycog_=info"
+
+[tempo]
+sample_rate_hz = 16000

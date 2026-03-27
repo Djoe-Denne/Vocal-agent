@@ -5,6 +5,7 @@ tls_enabled = false
 
 [logging]
 level = "debug"
+filter = "warn,audio_=debug,asr_=debug,alignment_=debug,tts_=debug,orchestration_=debug,rustycog_=debug,vocal_features=debug"
 
 
 [queue]

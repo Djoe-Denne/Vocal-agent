@@ -5,6 +5,7 @@ tls_enabled = false
 
 [logging]
 level = "debug"
+filter = "warn,audio_=debug,asr_=debug,alignment_=debug,tts_=debug,orchestration_=debug,rustycog_=debug,vocal_features=debug"
 
 
 [queue]
@@ -37,10 +38,43 @@ request_timeout_ms = 60000
 max_decoding_message_bytes = 67108864
 max_encoding_message_bytes = 67108864
 
+[service.tts]
+host = "127.0.0.1"
+port = 8084
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 60000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
+[service.tempo]
+host = "127.0.0.1"
+port = 8085
+tls_enabled = false
+connect_timeout_ms = 3000
+request_timeout_ms = 120000
+max_decoding_message_bytes = 67108864
+max_encoding_message_bytes = 67108864
+
 [service.pipeline]
 selected = "development"
 
 [service.pipeline.definitions.development]
 pre = ["audio_transform"]
 transcription = "asr_transcribe"
-post = ["alignment_enrich"]
+post = [
+  "alignment_enrich",
+  "dump_original",
+  "snapshot_original_timings",
+  "tts_synthesize",
+  "swap_tts_audio",
+  "dump_tts_audio",
+  "asr_transcribe_tts",
+  "alignment_enrich_tts",
+  "dump_tts_aligned",
+  "tempo_match",
+  "dump_tempo_result",
+  "asr_transcribe_result",
+  "alignment_enrich_result",
+  "dump_final"
+]

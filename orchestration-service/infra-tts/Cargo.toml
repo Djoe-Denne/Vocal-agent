@@ -1,0 +1,15 @@
+[package]
+name = "orchestration-infra-tts"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+orchestration-domain = { path = "../domain" }
+tts-grpc_server = { path = "../../tts-service/grpc" }
+async-trait = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }

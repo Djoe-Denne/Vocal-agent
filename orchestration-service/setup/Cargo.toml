@@ -10,9 +10,12 @@ orchestration-application = { path = "../application" }
 orchestration-configuration = { path = "../configuration" }
 orchestration-domain = { path = "../domain" }
 orchestration-http_server = { path = "../http" }
+orchestration-infra = { path = "../infra" }
 orchestration-infra-audio = { path = "../infra-audio" }
 orchestration-infra-asr = { path = "../infra-asr-whisper" }
 orchestration-infra-alignment = { path = "../infra-alignment" }
+orchestration-infra-tts-rest = { path = "../infra-tts-rest" }
+orchestration-infra-tempo = { path = "../infra-tempo" }
 anyhow = { workspace = true }
 rustycog-command = { workspace = true }
 rustycog-config = { workspace = true }

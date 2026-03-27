@@ -1,0 +1,28 @@
+syntax = "proto3";
+
+package tempo.v1;
+
+service TempoService {
+  rpc MatchTempo(MatchTempoRequest) returns (MatchTempoResponse);
+}
+
+message MatchTempoRequest {
+  repeated float tts_samples = 1;
+  uint32 tts_sample_rate_hz = 2;
+  repeated WordTiming original_timings = 3;
+  repeated WordTiming tts_timings = 4;
+  optional string session_id = 5;
+}
+
+message MatchTempoResponse {
+  string session_id = 1;
+  repeated float samples = 2;
+  uint32 sample_rate_hz = 3;
+}
+
+message WordTiming {
+  string word = 1;
+  uint64 start_ms = 2;
+  uint64 end_ms = 3;
+  float confidence = 4;
+}

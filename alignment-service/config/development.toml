@@ -5,10 +5,11 @@ tls_enabled = false
 
 [logging]
 level = "debug"
+filter = "warn,audio_=debug,asr_=debug,alignment_=debug,tts_=debug,orchestration_=debug,rustycog_=debug,vocal_features=debug"
 
 [alignment]
 sample_rate_hz = 16000
-model_path = "../models/asr-wav2vec2-ctc-french/model.safetensors"
-config_path = "../models/asr-wav2vec2-ctc-french/config.json"
-vocab_path = "../models/asr-wav2vec2-ctc-french/vocab.json"
+model_path = "../models/asr-wav2vec2-ctc-french-onnx/model.onnx"
+config_path = "../models/asr-wav2vec2-ctc-french-onnx/config.json"
+vocab_path = "../models/asr-wav2vec2-ctc-french-onnx/vocab.json"
 device = "cuda"

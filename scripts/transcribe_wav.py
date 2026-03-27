@@ -1,15 +1,14 @@
 #!/usr/bin/env python3
-"""
-Send a WAV file to the ASR transcribe endpoint.
+"""Simple helper to call orchestration-service from a WAV file.
 
-This script converts 16-bit PCM WAV samples to float32-like values in [-1.0, 1.0]
-and posts them as JSON to /api/asr/transcribe.
+Modes:
+- `redub-wav` (default): sends audio to `/api/asr/redub.wav` and writes WAV output.
+- `transcribe`: sends audio to `/api/asr/transcribe` and prints JSON response.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import struct
 import sys
 import uuid
@@ -71,12 +70,25 @@ def resample_linear(samples: list[float], src_rate_hz: int, dst_rate_hz: int) ->
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Transcribe a WAV file via ASR endpoint.")
+    parser = argparse.ArgumentParser(
+        description="Call orchestration-service with a WAV file."
+    )
     parser.add_argument("--wav", required=True, help="Path to input .wav file")
     parser.add_argument(
-        "--endpoint",
-        default="http://127.0.0.1:8090/api/asr/transcribe",
-        help="Transcribe endpoint URL",
+        "--orchestrator",
+        default="http://127.0.0.1:8090",
+        help="Base orchestration URL (default: http://127.0.0.1:8090)",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=("redub-wav", "transcribe"),
+        default="redub-wav",
+        help="Request mode (default: redub-wav)",
+    )
+    parser.add_argument(
+        "--out",
+        default="redub-output.wav",
+        help="Output WAV path for redub-wav mode (default: redub-output.wav)",
     )
     parser.add_argument(
         "--language",
@@ -134,25 +146,26 @@ def main() -> int:
     if args.max_samples is not None and args.max_samples > 0:
         samples = samples[: args.max_samples]
 
-    payload = {
+    payload: dict[str, object] = {
         "samples": samples,
         "sample_rate_hz": args.target_sample_rate,
         "language_hint": args.language,
         "session_id": args.session_id or str(uuid.uuid4()),
     }
+    print(f"Prepared payload with {len(samples)} samples")
 
-    payload_json = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
-    payload_size_mb = len(payload_json.encode("utf-8")) / (1024 * 1024)
-    print(
-        f"Prepared payload: {len(samples)} samples, "
-        f"{payload_size_mb:.2f} MB JSON body"
+    base_url = args.orchestrator.rstrip("/")
+    endpoint = (
+        f"{base_url}/api/asr/redub"
+        if args.mode == "redub-wav"
+        else f"{base_url}/api/asr/transcribe"
     )
+    print(f"POST {endpoint}")
 
     try:
         response = requests.post(
-            args.endpoint,
-            data=payload_json,
-            headers={"Content-Type": "application/json"},
+            endpoint,
+            json=payload,
             timeout=args.timeout,
         )
     except requests.RequestException as exc:
@@ -160,23 +173,27 @@ def main() -> int:
         return 3
 
     print(f"HTTP {response.status_code}")
+
+    if not response.ok:
+        # Error responses are usually JSON, but we handle plain text too.
+        try:
+            print(response.json())
+        except ValueError:
+            print(response.text)
+        return 4
+
+    if args.mode == "redub-wav":
+        out_path = Path(args.out)
+        out_path.write_bytes(response.content)
+        print(f"WAV saved: {out_path} ({len(response.content)} bytes)")
+        return 0
+
     try:
-        print(json.dumps(response.json(), indent=2, ensure_ascii=True))
+        print(response.json())
     except ValueError:
         print(response.text)
 
-    if (
-        response.status_code == 400
-        and "request_body_error" in response.text
-        and payload_size_mb > 2.0
-    ):
-        print(
-            "Hint: request body is large. Reduce --max-samples or increase "
-            "server body limit.",
-            file=sys.stderr,
-        )
-
-    return 0 if response.ok else 4
+    return 0
 
 
 if __name__ == "__main__":

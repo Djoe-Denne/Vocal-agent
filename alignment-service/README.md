@@ -28,7 +28,7 @@ alignment-service
 ├── domain           (alignment entities + port trait)
 ├── grpc             (tonic server + generated client/service stubs)
 ├── proto            (protobuf service contract)
-└── infra-alignment  (Wav2Vec2 forced aligner adapter)
+└── infra-alignment  (AlignmentPort adapter delegating to `wav2vec2-rs`)
 ```
 
 ## Build
@@ -42,4 +42,19 @@ cargo check --workspace
 ```powershell
 $env:RUN_ENV="development"
 cargo run -p alignment-setup
+```
+
+Alignment defaults to the ONNX runtime backend. The Candle alignment path is removed.
+Set model files to the shared ONNX package at:
+`models/asr-wav2vec2-ctc-french-onnx/model.onnx`,
+`models/asr-wav2vec2-ctc-french-onnx/config.json`,
+and `models/asr-wav2vec2-ctc-french-onnx/vocab.json`.
+
+If you need to export ONNX from Hugging Face/local weights, use:
+`https://github.com/Djoe-Denne/wav2vec2-rs/blob/main/scripts/export_ctc_model_to_onnx.py`
+
+To enable ONNX inference with BP/DP on WGPU:
+
+```powershell
+cargo run -p alignment-setup --features wav2vec2-onnx-wgpu-bp
 ```

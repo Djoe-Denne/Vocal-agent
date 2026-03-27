@@ -67,16 +67,21 @@ impl AsrUseCase for AsrUseCaseImpl {
             .join(" ");
 
         let aligned_words = extract_alignment_words(&context);
+        let tts_output = context.tts_output.clone();
+        let output_audio = Some(context.audio.clone());
         let response = TranscribeAudioResponse {
             session_id: context.session_id,
             transcript,
             aligned_words,
             text,
+            tts_output,
+            output_audio,
         };
 
         tracing::debug!(
             segment_count = response.transcript.segments.len(),
             aligned_word_count = response.aligned_words.len(),
+            has_tts_output = response.tts_output.is_some(),
             "asr pipeline completed"
         );
 

@@ -7,7 +7,7 @@ license.workspace = true
 
 [features]
 default = []
-wav2vec2-cuda = ["alignment-infra-alignment/cuda"]
+wav2vec2-onnx-wgpu-bp = ["alignment-infra-alignment/onnx-wgpu-bp"]
 
 [dependencies]
 alignment-application = { path = "../application" }

@@ -1,0 +1,10 @@
+[server]
+host = "127.0.0.1"
+port = 8085
+
+[logging]
+level = "debug"
+filter = "warn,tempo_=debug,rustycog_=debug"
+
+[tempo]
+sample_rate_hz = 16000

@@ -9,6 +9,10 @@ target/
 
 models/
 *.wav
+debug-dumps/
+debug-dump/
 # Keep Cargo.lock for applications/workspaces.
 # Uncomment the next line if this is a library crate.
 # Cargo.lock
+
+tts-service/

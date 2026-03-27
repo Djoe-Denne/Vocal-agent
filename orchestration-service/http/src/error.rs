@@ -41,18 +41,9 @@ pub fn error_mapper(error: CommandError) -> HttpError {
             message: error.to_string(),
         },
         CommandError::Authentication { .. } => HttpError::Unauthorized,
-        CommandError::Business { .. } => {
-            let msg = error.message().to_ascii_lowercase();
-            if msg.contains("not found") {
-                HttpError::NotFound
-            } else if msg.contains("permission") || msg.contains("forbidden") {
-                HttpError::Forbidden
-            } else {
-                HttpError::Validation {
-                    message: error.to_string(),
-                }
-            }
-        }
+        CommandError::Business { .. } => HttpError::Validation {
+            message: error.to_string(),
+        },
         _ => HttpError::Internal {
             message: error.to_string(),
         },

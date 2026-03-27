@@ -94,15 +94,15 @@ fn default_sample_rate() -> u32 {
 }
 
 fn default_model_path() -> String {
-    "models/wav2vec2-fr.safetensors".to_string()
+    "models/asr-wav2vec2-ctc-french-onnx/model.onnx".to_string()
 }
 
 fn default_config_path() -> String {
-    "models/wav2vec2-config.json".to_string()
+    "models/asr-wav2vec2-ctc-french-onnx/config.json".to_string()
 }
 
 fn default_vocab_path() -> String {
-    "models/wav2vec2-vocab.json".to_string()
+    "models/asr-wav2vec2-ctc-french-onnx/vocab.json".to_string()
 }
 
 fn default_device() -> String {
